@@ -1,0 +1,23 @@
+#
+# Global Settings
+#
+ForwardAgent yes
+#VisualHostKey yes
+HashKnownHosts no
+#ConnectTimeout 2
+
+# My Hosts
+#Host hostname hostname.fqdn.com
+#    Hostname hostname.fqdn.com
+
+#
+# Default
+#
+Host *
+  StrictHostKeyChecking ask
+  ServerAliveCountMax 6
+  ServerAliveInterval 60
+  KeepAlive yes
+  ControlMaster auto
+  ControlPath ~/.ssh/%r@%h:%p
+  ControlPersist 8h

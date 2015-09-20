@@ -1,0 +1,169 @@
+#!/usr/bin/env zsh
+
+# Ensure colors are available.
+autoload -U colors && colors
+
+# Path where the dotfiles will be placed.
+DOTFILES_DIRECTORY="${HOME}/.dotfiles"
+# Git remote repository
+DOTFILES_GIT_REMOTE="https://github.com/ezintz/dotfiles.git"
+
+# Homebrew formulae
+DESIRED_HOMEBREW_FORMULAE=(
+  'coreutils'
+  'git'
+  'git-extras'
+  'git-flow'
+  'wget'
+  'curl'
+  'python'
+  'ack'
+  'node'
+  'tmux'
+  'flow'
+  'fortune'
+  'watchman'
+)
+
+# NPM packages
+DESIRED_NPM_PACKAGES=(
+  'n'
+  'babel'
+  'gulp'
+)
+
+# Python packages
+DESIRED_PIP_PACKAGES=(
+  'pygments'
+)
+
+
+if [[ ! -d ${DOTFILES_DIRECTORY} ]]; then
+  print_header "Initializing Git repository ..."
+  git clone --recursive ${DOTFILES_GIT_REMOTE} ${DOTFILES_DIRECTORY}
+  print_success "... done!"
+fi
+
+# Change directory to our dotfiles.
+cd ${DOTFILES_DIRECTORY}
+
+# Load helpers
+source ${DOTFILES_DIRECTORY}/bin/_helpers
+
+# Create symbolic links in home directory.
+# $1 - Source file
+# $2 - Target file
+function link {
+  ln -fs "${DOTFILES_DIRECTORY}/${1}" "${HOME}/${2}"
+}
+
+function mirror_files {
+  link "curlrc" ".curlrc"
+  link "wgetrc" ".wgetrc"
+
+  link "ssh/config" ".ssh/config"
+
+  link "git/gitignore" ".gitignore"
+  link "git/gitattributes" ".gitattributes"
+  link "git/gitconfig" ".gitconfig"
+
+  link "prezto/runcoms/zlogin" ".zlogin"
+  link "prezto/runcoms/zlogout" ".zlogout"
+  link "prezto/runcoms/zprofile" ".zprofile"
+  link "prezto/runcoms/zpreztorc" ".zpreztorc"
+  link "prezto/runcoms/zshenv" ".zshenv"
+
+  # Do not create a link if there exists a file as the .zshrc could contain
+  # a location configuration.
+  if [[ ! -e $HOME/.zshrc ]]; then
+    link "prezto/runcoms/zshrc" ".zshrc"
+  fi
+}
+
+# Test for known flags
+for opt in $@
+do
+  case $opt in
+    -nc|--no-configuration) no_configuration=true ;;
+    -np|--no-packages) no_packages=true ;;
+    -ns|--no-sync) no_sync=true ;;
+    -nl|--no-links) no_links=true ;;
+    -*|--*) print_warning "Invalid option $opt" ;;
+  esac
+done
+
+# If the host is running Mac OS X
+if is_osx; then
+  # Before relying on Homebrew, check that packages can be compiled
+  if ! type_exists 'gcc'; then
+    abort "The XCode Command Line Tools must be installed first. Download them from https://developer.apple.com/downloads" 1
+  fi
+
+  # Check for Homebrew
+  if ! type_exists 'brew'; then
+    print_header "Installing Homebrew ..."
+    seek_confirmation "Do you want to install homebrew now?"
+    if is_confirmed; then
+      print_notice "Downloading Homebrew ..."
+      ruby -e "$(curl -fsSkL raw.github.com/mxcl/homebrew/go)"
+    fi
+    abort "Homebrew must be installed. For more information visit the website: http://mxcl.github.io/homebrew" 1
+  fi
+fi
+
+# Install or update packages
+if [ $no_packages ]; then
+  print_notice "Skipped installation of additional packages."
+else
+  # Installing Homebrew formulae only on hosts that are running Mac OS X
+  if is_osx; then;
+    install_brew_formulae
+  fi
+
+  # Install pip packages
+  install_pip_packages
+
+  # Install node.js packages
+  install_npm_packages
+fi
+
+# Conditionally sync with the remote repository
+if [ $no_sync ]; then
+  print_notice "Skipped dotfiles synchronization."
+else
+  print_notice "Syncing dotfiles ..."
+  # Pull down the latest changes
+  git pull --rebase origin master
+  # Update submodules
+  git submodule update --recursive
+  print_success "... done!"
+fi
+
+if [ $no_configuration ]; then
+  print_notice "Skipped dotfiles setup."
+else
+  print_header "Setting up dotfiles"
+  seek_confirmation "This step may overwrite existing dotfiles."
+  if is_confirmed; then
+    print_notice "Mirroring dotfiles ..."
+    mirror_files
+    print_success "... done!"
+  else
+    print_notice "Skipped mirroring dotfiles."
+  fi
+
+  if is_osx; then
+    print_header "OS X settings update"
+    seek_confirmation "Warning: This step may overwrite your OS X settings."
+    if is_confirmed; then
+      print_notice "Updating settings ..."
+      source bin/_osx
+      print_success "... done!"
+      print_notice "Note that some of these changes require a logout/restart to take effect."
+    else
+      print_notice "Skipped OS X settings update."
+    fi
+  fi
+
+  setup_git
+fi

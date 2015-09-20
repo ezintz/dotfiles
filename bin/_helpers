@@ -1,0 +1,196 @@
+# Host is a Mac OSX
+function is_osx {
+  if [[ "$OSTYPE" != darwin* ]]; then
+    return 1
+  fi
+
+  return 0
+}
+
+# Host is Linux based
+function is_linux {
+  if [[ "$OSTYPE" != linux* ]]; then
+    return 1
+  fi
+
+  return 0
+}
+
+function print_header {
+  printf "\n${fg[blue]}%s${reset_color}\n" "$@"
+}
+
+function print_success {
+  printf "${fg[green]}✓ %s${reset_color}\n" "$@"
+}
+
+function print_notice {
+  printf "${fg[yellow]}i %s${reset_color}\n" "$@"
+}
+
+function print_warning {
+  printf "${fg[magenta]}! %s${reset_color}\n" "$@"
+}
+
+function print_error {
+  printf "${fg[red]}x %s${reset_color}\n" "$@"
+}
+
+function print_question {
+  printf "${fg[cyan]}? %s${reset_color}\n" "$@"
+}
+
+function seek_confirmation {
+  print_warning "$@"
+  read -q "REPLY?${fg[cyan]}? Continue? (y/n)${reset_color} " -n 1
+  printf "\n"
+}
+
+function is_confirmed {
+  if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Test whether a command exists.
+# $1 - command name
+function type_exists {
+  if [ $(command -v $1) ]; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Test whether a Homebrew formula is already installed.
+# $1 - formula name (may include options)
+function homebrew_formula_exists {
+  if $(brew list $1 &> /dev/null); then
+    print_notice "$1 already installed."
+    return 0
+  fi
+
+  print_warning "Missing brew formula: $1"
+  return 1
+}
+
+function npm_package_exists {
+  if $(npm list -g $1 | sed -n '/$1@/p'); then
+    print_notice "npm package $1 already installed"
+    return 0
+  fi
+
+  print_warning "Missing npm package: $1"
+  return 1
+}
+
+# Test whether a pip package is already installed.
+# $1 - package name
+function pip_package_exists {
+  if [[ -n $(pip show $1) ]]; then
+    print_success "$1 already installed."
+    return 0
+  fi
+
+  print_warning "Missing pip package: $1"
+  return 1
+}
+
+function install_brew_formulae {
+  print_header "Updating Homebrew..."
+  brew update
+  [ $? ] && print_success "...updated!"
+
+  print_header "Installing desired Homebrew formulae..."
+  local -a missing
+
+  for formula in ${DESIRED_HOMEBREW_FORMULAE[*]}; do
+    if ! homebrew_formula_exists $formula; then
+      # Store the name (and options) of every missing formula
+      missing=("${missing[@]}" "${formula}")
+    fi
+  done
+
+  if [ -n "$missing" ]; then
+    # Convert the array of missing formula into a list of space-separate strings
+    print_notice "Installing missing Homebrew formulae..."
+    # Install all missing formulae
+    brew install ${missing}
+
+    [[ $? -eq 0 ]] && print_success "...done."
+  fi
+
+  # Remove outdated versions from the Cellar
+  print_header "Cleaning up Homebrew..."
+  brew cleanup
+  [[ $? -eq 0 ]] && print_success "...cleaned up!"
+}
+
+function install_npm_packages {
+  print_header "Installing desired Node.js packages..."
+  local -a missing
+
+  for formula in ${DESIRED_NPM_PACKAGES[*]}; do
+    if ! npm_package_exists $formula; then
+      # Store the name (and options) of every missing formula
+      missing=("${missing[@]}" "${formula}")
+    fi
+  done
+
+  if [ -n "$missing" ]; then
+    print_notice "Installing missing Node.js packages..."
+    npm install -g ${missing}
+
+    [[ $? -eq 0 ]] && print_success "...done."
+  fi
+}
+
+function install_pip_packages {
+  print_header "Installing desired pip packages..."
+  local -a missing
+
+  for formula in ${DESIRED_PIP_PACKAGES[*]}; do
+    if ! pip_package_exists $formula; then
+      # Store the name (and options) of every missing formula
+      missing=("${missing[@]}" "${formula}")
+    fi
+  done
+
+  if [ -n "$missing" ]; then
+    print_notice "Installing missing pip packges..."
+    pip install ${missing}
+
+    [[ $? -eq 0 ]] && print_success "...done."
+  fi
+}
+
+function setup_git {
+  if [[ -n $(git config --global user.name) ]]; then
+    return 0
+  fi
+
+  print_header "Setting up Git identity ..."
+  local username=
+  local email=
+
+  while [[ "${username// }" = "" ]]; do
+    read "username?${fg[cyan]}? Please enter your username (e.g. Walter White):${reset_color} "
+  done
+
+  while [[ "${email// }" = "" ]]; do
+    read "email?${fg[cyan]}? Please enter your e-mail address:${reset_color} "
+  done
+
+  seek_confirmation "Configure Git with username \"${username}\" and e-mail \"${email}\""
+  if is_confirmed; then
+    git config --global user.name $username
+    git config --global user.email $email
+    print_success "... done!"
+  else
+    print_warning "You should configure your Git identity. See also http://git-scm.com/book/en/v2/Getting-Started-First-Time-Git-Setup"
+  fi
+
+  return 0
+}

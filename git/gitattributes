@@ -1,0 +1,79 @@
+#
+# Automatically detect text files and normalize line endings for all text-based files
+# http://davidlaing.com/2012/09/19/customise-your-gitattributes-to-become-a-git-ninja/
+#
+* text=auto
+
+# Encrypt the repository
+# Remove/modify this line if the repository is meant to be open-source
+#*.* filter=git-crypt diff=git-crypt
+.gitattributes !filter !diff
+
+# .files
+*.bowerrc text
+.csslintrc text
+.editorconfig text
+.gitattributes text
+.gitignore text
+.htaccess text
+.jshintrc text
+.jscsrc text
+.jshintignore text
+*.npmignore text
+
+# Source code
+*.php text
+*.inc text
+*.css text
+*.sass text
+*.scss text
+*.less text
+*.styl text
+*.js text
+*.coffee text
+*.json text
+*.htm text
+*.html text
+*.xml text
+*.txt text
+*.ini text
+*.md text
+*.rb text
+*.py text
+*.sql text
+*.sh text
+*.bat text
+
+# These files are binary and should be left untouched
+# (binary is a macro for -text -diff)
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.mov   binary
+*.mp4   binary
+*.mp3   binary
+*.flv   binary
+*.fla   binary
+*.swf   binary
+*.gz    binary
+*.zip   binary
+*.7z    binary
+*.ttf   binary
+
+# Documents
+*.doc  diff=astextplain
+*.DOC  diff=astextplain
+*.docx diff=astextplain
+*.DOCX diff=astextplain
+*.xls  diff=astextplain
+*.XLS  diff=astextplain
+*.xlsx diff=astextplain
+*.XLSX diff=astextplain
+*.dot  diff=astextplain
+*.DOT  diff=astextplain
+*.pdf  diff=astextplain
+*.PDF  diff=astextplain
+*.rtf  diff=astextplain
+*.RTF  diff=astextplain

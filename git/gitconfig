@@ -1,0 +1,193 @@
+[core]
+  # Use custom `.gitignore` and `.gitattributes`
+  excludesfile = ~/.gitignore
+  attributesfile = ~/.gitattributes
+
+  # Mac OS X / Unix users
+  #autocrlf = input
+  #safecrlf = true
+
+  # Windows users
+  #autocrlf = true
+  #safecrlf = true
+
+  #whitespace = fix,-indent-with-non-tab,trailing-space,cr-at-eol
+
+[alias]
+  a      = add
+  b      = branch
+  bc     = checkout -b
+  bl     = branch -v
+  bL     = branch -av
+
+  co     = checkout
+  ci     = commit
+  cia    = commit -a
+  co     = checkout
+
+  c      = commit -v
+  ca     = commit --all
+  cm     = commit --message
+  cam    = commit --all --message
+  camend = commit --amend --reuse-message HEAD
+  cundo  = reset --soft "HEAD^"
+  cp     = cherry-pick
+  # Clone a repository recursive (including all submodules).
+  cr     = clone --recursive
+
+  d      = diff          # Diff working dir to index
+  ds     = diff --staged # Diff index to HEAD
+  dc     = diff --staged # Diff index to HEAD
+  dh     = diff HEAD     # Diff working dir and index to HEAD
+
+  f      = fetch
+  fm     = pull
+  fo     = fetch origin
+
+  # View the SHA, description, and history graph of the latest 20 commits
+  l    = log --topo-order --pretty=oneline -n 20 --graph
+  #l   = log --topo-order --pretty=format:'%C(yellow)%h %C(cyan)%cn %C(blue)%cr%C(reset) %s'
+  #ls  = log --topo-order --stat --pretty=format:'%C(bold)%C(yellow)Commit:%C(reset) %C(yellow)%H%C(red)%d%n%C(bold)%C(yellow)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)%C(yellow)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B'
+  #ld  = log --topo-order --stat --patch --full-diff --pretty=format:'%C(bold)%C(yellow)Commit:%C(reset) %C(yellow)%H%C(red)%d%n%C(bold)%C(yellow)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)%C(yellow)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B'
+  #lg  = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+  #lga = log --topo-order --all --graph --pretty=format:'%C(yellow)%h %C(cyan)%cn%C(reset) %s %C(red)%d%C(reset)%n'
+  #lm  = log --topo-order --pretty=format:'%s'
+  #lh  = shortlog --summary --numbered
+  #llf = fsck --lost-found
+
+  #lg1 = log --graph --abbrev-commit --decorate --date=relative --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all
+  #lg2 = log --graph --abbrev-commit --decorate --format=format:'%C(bold blue)%h%C(reset) - %C(bold cyan)%aD%C(reset) %C(bold green)(%ar)%C(reset)%C(bold yellow)%d%C(reset)%n''          %C(white)%s%C(reset) %C(dim white)- %an%C(reset)' --all
+
+  m      = merge
+  mom    = merge origin/master
+  mod    = merge origin/develop
+
+  p      = push
+  pa     = push --all
+  pt     = push --tags
+
+  # View the current working tree status using the short format
+  s      = status -s
+  st     = status
+
+  # Show verbose output about tags, branches or remotes
+  tags        = tag -l --sort=v:refname
+  branches    = branch -a
+  remotes     = remote -v
+
+  re  = remote
+  rel = remote --verbose
+  rea = remote add
+  rex = remote rm
+  rem = remote rename
+
+  # All commits since yesterday.
+  standup = log --pretty=one --since=yesterday
+
+  # All commits since midnight.
+  today = log --pretty=one --since=midnight
+
+  # Find out who is currently active on the repository
+  who = log --pretty=med --no-merges
+
+[pretty]
+  med = "%C(bold)Commit:%C(reset) %C(green)%H%C(red)%d%n%C(bold)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B"
+  one = "%C(green)%h%C(reset) %s%C(red)%d%C(reset)%n"
+  brief = "%C(green)%h%C(reset) %s%n%C(blue)(%ar by %an)%C(red)%d%C(reset)%n"
+
+
+[color]
+  # Use colors in Git commands that are capable of colored output when
+  # outputting to the terminal.
+  ui = auto
+  interactive = auto
+
+  #branch = always
+  #diff = always
+  #grep = always
+  #interactive = always
+  #pager = true
+  #showbranch = auto
+  #status = auto
+  #ui = always
+
+[color "branch"]
+  current = yellow reverse
+  local = yellow
+  remote = green
+
+[color "diff"]
+  meta = yellow bold
+  frag = magenta bold
+  old = red bold
+  new = green bold
+  #whitespace = white reverse
+
+[color "status"]
+  header = normal
+  added = green
+  changed = blue
+  untracked = yellow
+  branch = green
+  nobranch = red
+
+[diff]
+  tool = vimdiff
+
+[difftool "vimdiff"]
+  prompt = false
+
+[merge]
+  # Include summaries of merged commits in newly created merge commit messages.
+  log = true
+  tool = vimdiff
+
+[mergetool]
+  keepBackup = true
+
+[push]
+  default = simple
+
+[filter "lfs"]
+  clean = git lfs clean %f
+  smudge = git lfs smudge %f
+  required = true
+
+# Use `origin` as the default remote on the `master` branch in all cases.
+[branch "master"]
+  remote = origin
+  merge = refs/heads/master
+
+#
+# URL shorthands
+#
+
+# github://<user>/<project>
+[url "git@github.com:"]
+  insteadOf = "github.com://"
+  pushInsteadOf = "github://"
+  pushInsteadOf = "git://github.com"
+
+# gist://<id>
+[url "git@gist.github.com:"]
+  insteadOf = "gist://"
+  pushInsteadOf = "gist://"
+  pushInsteadOf = "git://gist.github.com"
+
+# bitbucket://<user>/<project>
+[url "git@bitbucket.com:"]
+  insteadOf = "bitbucket.com://"
+  pushInsteadOf = "bitbucket://"
+  pushInsteadOf = "git://bitbucket.com"
+
+# stash://<repo>/<project>
+#[url "ssh://git@git/"]
+#  insteadOf = "stash://"
+#  pushInsteadOf = "stash://"
+#  pushInsteadOf = "ssh://git@git"
+
+# git://<user>/<repo>
+[url "git@gitlab.zintz.co:"]
+  insteadOf = "git://"
+  pushInsteadOf = "git://"
+  pushInsteadOf = "git://gitlab.zintz.co"
