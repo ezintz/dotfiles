@@ -39,9 +39,7 @@ DESIRED_PIP_PACKAGES=(
 
 
 if [[ ! -d ${DOTFILES_DIRECTORY} ]]; then
-  print_header "Initializing Git repository ..."
   git clone --recursive ${DOTFILES_GIT_REMOTE} ${DOTFILES_DIRECTORY}
-  print_success "... done!"
 fi
 
 # Change directory to our dotfiles.
