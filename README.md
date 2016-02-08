@@ -27,6 +27,7 @@ Default set of settings for Mac OS X which are gratuitously stolen from [@mathia
 * [tmux](https://tmux.github.io/): Terminal multiplexer like [screen](https://www.gnu.org/software/screen/).
 * [watchman](https://facebook.github.io/watchman/): File watching service.
 * [wget](http://www.gnu.org/software/wget/): GNU Wget is a free software package for retrieving files.
+* [docker](https://www.docker.com/products/docker-engine), [docker-compose](https://www.docker.com/products/docker-compose) and [docker-machine](https://www.docker.com/products/docker-machine): The basic docker toolbox
 
 ### npm packages
 
@@ -46,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/master/bin/dotfiles
 
 ## Usage
 
-Just do whatever you did before. In addition you also got a new command `dotfiles` that you can use.
+Just do whatever you did before. In addition you also got a new command `dotfiles` that you can use. It will update the desired packages and run the configuration.
 
 ```sh
 dotfiles --no-configuration \ # Do not apply any configuration
@@ -54,6 +55,8 @@ dotfiles --no-configuration \ # Do not apply any configuration
   --no-sync \ # Do not sync with repository
   --no-links # Do not create symbolic links
 ```
+
+*Note: To be able to run the synchronization you should commit the changes that you make.*
 
 # Credits
 
