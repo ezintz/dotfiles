@@ -23,6 +23,9 @@ DESIRED_HOMEBREW_FORMULAE=(
   'flow'
   'fortune'
   'watchman'
+  'docker'
+  'docker-compose'
+  'docker-machine'
 )
 
 # NPM packages
