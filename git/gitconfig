@@ -4,7 +4,7 @@
   attributesfile = ~/.gitattributes
 
   # Use Atom as editor
-  editor = atom --wait
+  # editor = atom --wait
 
   # Mac OS X / Unix users
   autocrlf = input
