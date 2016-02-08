@@ -3,15 +3,18 @@
   excludesfile = ~/.gitignore
   attributesfile = ~/.gitattributes
 
+  # Use Atom as editor
+  editor = atom --wait
+
   # Mac OS X / Unix users
-  #autocrlf = input
-  #safecrlf = true
+  autocrlf = input
+  safecrlf = true
 
   # Windows users
   #autocrlf = true
   #safecrlf = true
 
-  #whitespace = fix,-indent-with-non-tab,trailing-space,cr-at-eol
+  whitespace = fix,-indent-with-non-tab,trailing-space,cr-at-eol
 
 [alias]
   a      = add
@@ -44,19 +47,12 @@
   fm     = pull
   fo     = fetch origin
 
-  # View the SHA, description, and history graph of the latest 20 commits
-  l    = log --topo-order --pretty=oneline -n 20 --graph
-  #l   = log --topo-order --pretty=format:'%C(yellow)%h %C(cyan)%cn %C(blue)%cr%C(reset) %s'
-  #ls  = log --topo-order --stat --pretty=format:'%C(bold)%C(yellow)Commit:%C(reset) %C(yellow)%H%C(red)%d%n%C(bold)%C(yellow)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)%C(yellow)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B'
-  #ld  = log --topo-order --stat --patch --full-diff --pretty=format:'%C(bold)%C(yellow)Commit:%C(reset) %C(yellow)%H%C(red)%d%n%C(bold)%C(yellow)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)%C(yellow)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B'
-  #lg  = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
-  #lga = log --topo-order --all --graph --pretty=format:'%C(yellow)%h %C(cyan)%cn%C(reset) %s %C(red)%d%C(reset)%n'
-  #lm  = log --topo-order --pretty=format:'%s'
-  #lh  = shortlog --summary --numbered
-  #llf = fsck --lost-found
-
-  #lg1 = log --graph --abbrev-commit --decorate --date=relative --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all
-  #lg2 = log --graph --abbrev-commit --decorate --format=format:'%C(bold blue)%h%C(reset) - %C(bold cyan)%aD%C(reset) %C(bold green)(%ar)%C(reset)%C(bold yellow)%d%C(reset)%n''          %C(white)%s%C(reset) %C(dim white)- %an%C(reset)' --all
+  l      = log --topo-order --pretty=med -n 20
+  ls     = log --topo-order --stat --no-merges --pretty=detailed
+  ld     = log --topo-order --stat --patch --full-diff --no-merges --pretty=detailed
+  lg     = log --topo-order --graph --abbrev-commit --decorate --pretty=brief
+  lga    = log --topo-order --graph --abbrev-commit --decorate --all --pretty=brief
+  lh     = shortlog --summary --numbered
 
   m      = merge
   mom    = merge origin/master
@@ -69,6 +65,11 @@
   # View the current working tree status using the short format
   s      = status -s
   st     = status
+
+  # Stash operations
+  sl     = stash list
+  sa     = stash apply
+  ss     = stash save
 
   # Show verbose output about tags, branches or remotes
   tags        = tag -l --sort=v:refname
@@ -91,10 +92,9 @@
   who = log --pretty=med --no-merges
 
 [pretty]
-  med = "%C(bold)Commit:%C(reset) %C(green)%H%C(red)%d%n%C(bold)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B"
-  one = "%C(green)%h%C(reset) %s%C(red)%d%C(reset)%n"
-  brief = "%C(green)%h%C(reset) %s%n%C(blue)(%ar by %an)%C(red)%d%C(reset)%n"
-
+  brief = "%C(yellow)%h%C(reset) %C(blue)%cr%C(reset) by %C(cyan)%cn%C(reset) %s %C(red)%d%C(reset)"
+  med = "%n%C(bold)%C(yellow)Commit: %C(yellow)%H%C(reset)%n%C(bold)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B"
+  detailed = "%n%C(bold)%C(yellow)Commit: %C(yellow)%H%C(red)%d%C(reset)%n%C(bold)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B"
 
 [color]
   # Use colors in Git commands that are capable of colored output when
