@@ -1,3 +1,3 @@
 [submodule "prezto"]
 	path = prezto
-	url = git@github.com:ezintz/prezto.git
+	url = https://github.com/ezintz/prezto.git
