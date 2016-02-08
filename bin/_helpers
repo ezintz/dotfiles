@@ -176,11 +176,10 @@ function setup_git {
   local email=
 
   while [[ "${username// }" = "" ]]; do
-    read "username?${fg[cyan]}? Please enter your username (e.g. Walter White):${reset_color} "
+    vared -c -p "${fg[cyan]}? Please enter your username (e.g. Walter White):${reset_color} " username
   done
-
   while [[ "${email// }" = "" ]]; do
-    read "email?${fg[cyan]}? Please enter your e-mail address:${reset_color} "
+    vared -c -p "${fg[cyan]}? Please enter your e-mail address:${reset_color} " email
   done
 
   seek_confirmation "Configure Git with username \"${username}\" and e-mail \"${email}\""
