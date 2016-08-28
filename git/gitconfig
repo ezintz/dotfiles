@@ -1,20 +1,27 @@
 [core]
-  # Use custom `.gitignore` and `.gitattributes`
+  ## Use a global customized `.gitignore` and `.gitattributes`.
   excludesfile = ~/.gitignore
-  attributesfile = ~/.gitattributes
+  # attributesfile = ~/.gitattributes
 
-  # Use Atom as editor
-  # editor = atom --wait
+  ## Make `git rebase` safer on OS X
+  ## More info: <http://www.git-tower.com/blog/make-git-rebase-safe-on-osx/>
+  trustctime = false
 
-  # Mac OS X / Unix users
+  ## Prevent showing files whose names contain non-ASCII symbols as unversioned.
+  ## http://michael-kuehnel.de/git/2014/11/21/git-mac-osx-and-german-umlaute.html
+  precomposeunicode = false
+
+  ## Treat spaces before tabs and all kinds of trailing whitespace as an error
+  ## trailing-space: looks for spaces at the end of a line
+  ## space-before-tab: looks for spaces before tabs at the beginning of a line
+  whitespace = fix,-indent-with-non-tab,trailing-space,cr-at-eol
+
+  ## https://help.github.com/articles/dealing-with-line-endings
   autocrlf = input
   safecrlf = true
 
-  # Windows users
-  #autocrlf = true
-  #safecrlf = true
-
-  whitespace = fix,-indent-with-non-tab,trailing-space,cr-at-eol
+  ## Set atom as default editor
+  editor = atom --wait
 
 [alias]
   a      = add
@@ -35,7 +42,6 @@
   camend = commit --amend --reuse-message HEAD
   cundo  = reset --soft "HEAD^"
   cp     = cherry-pick
-  # Clone a repository recursive (including all submodules).
   cr     = clone --recursive
 
   d      = diff          # Diff working dir to index
@@ -43,7 +49,7 @@
   dc     = diff --staged # Diff index to HEAD
   dh     = diff HEAD     # Diff working dir and index to HEAD
 
-  f      = fetch
+  f      = fetch --prune
   fm     = pull
   fo     = fetch origin
 
@@ -62,16 +68,17 @@
   pa     = push --all
   pt     = push --tags
 
-  # View the current working tree status using the short format
   s      = status -s
   st     = status
 
-  # Stash operations
   sl     = stash list
   sa     = stash apply
   ss     = stash save
 
-  # Show verbose output about tags, branches or remotes
+  sm     = submodule
+  smu    = submodule foreach git pull origin master
+
+  alias       = !git config --list | grep 'alias\\.' | sed 's/alias\\.\\([^=]*\\)=\\(.*\\)/\\1\\\t => \\2/' | sort
   tags        = tag -l --sort=v:refname
   branches    = branch -a
   remotes     = remote -v
@@ -81,6 +88,14 @@
   rea = remote add
   rex = remote rm
   rem = remote rename
+
+  vtreelog = log --all --graph --decorate=short --color --format=vtree
+  lt = !bash -c '"\
+      while IFS=+ read -r hash time branch message; do\
+        timelength=$(echo \"$time\" | sed -r \"s:[^ ][[]([0-9]{1,2}(;[0-9]{1,2})?)?m::g\");\
+        timelength=$(echo \"16+${#time}-${#timelength}\" | bc);\
+        printf \"%${timelength}s    %s %s %s\n\" \"$time\" \"$hash\" \"$branch\" \"$message\";\
+      done < <(git vtreelog && echo) | less -EFRXS"'
 
   # All commits since yesterday.
   standup = log --pretty=one --since=yesterday
@@ -95,41 +110,57 @@
   brief = "%C(yellow)%h%C(reset) %C(blue)%cr%C(reset) by %C(cyan)%cn%C(reset) %s %C(red)%d%C(reset)"
   med = "%n%C(bold)%C(yellow)Commit: %C(yellow)%H%C(reset)%n%C(bold)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B"
   detailed = "%n%C(bold)%C(yellow)Commit: %C(yellow)%H%C(red)%d%C(reset)%n%C(bold)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B"
+  vtree = %C(bold blue)%h%C(reset)+%C(bold black)(%cr)%C(reset)+%C(auto)%D%C(reset)++\n+++       %C(bold black)%an%C(reset)%C(black):%C(reset) %s
 
 [color]
-  # Use colors in Git commands that are capable of colored output when
-  # outputting to the terminal.
-  ui = auto
+  branch      = auto
+  diff        = auto
   interactive = auto
-
-  #branch = always
-  #diff = always
-  #grep = always
-  #interactive = always
-  #pager = true
-  #showbranch = auto
-  #status = auto
-  #ui = always
+  showbranch  = true
+  status      = auto
+  pager       = true
+  ui          = true
 
 [color "branch"]
-  current = yellow reverse
-  local = yellow
-  remote = green
+  plain    = yellow
+  current  = magenta bold
+  local    = blue bold
+  remote   = white
+  upstream = green bold
+
+  #current = yellow reverse
+  #local   = yellow
+  #remote  = green
 
 [color "diff"]
-  meta = yellow bold
-  frag = magenta bold
-  old = red bold
-  new = green bold
+  plain      = normal
+  old        = red
+  new        = green
+  commit     = yellow
+  meta       = blue
+  frag       = cyan
+  func       = yellow bold
+  whitespace = red reverse
+  #meta = yellow bold
+  #frag = magenta bold
+  #old = red bold
+  #new = green bold
   #whitespace = white reverse
 
 [color "status"]
-  header = normal
-  added = green
-  changed = blue
-  untracked = yellow
-  branch = green
-  nobranch = red
+  header    = black bold
+  added     = green bold
+  changed   = red
+  untracked = blue bold
+  branch    = green bold
+  nobranch  = red
+
+  # header = normal
+  # added = green
+  # changed = blue
+  # untracked = yellow
+  # branch = green
+  # nobranch = red
 
 [diff]
   tool = vimdiff
@@ -137,30 +168,28 @@
 [difftool "vimdiff"]
   prompt = false
 
+[difftool "phpstorm"]
+  cmd = /Applications/PhpStorm.app/Contents/MacOS/phpstorm diff $(cd $(dirname "$LOCAL") && pwd)/$(basename "$LOCAL") $(cd $(dirname "$REMOTE") && pwd)/$(basename "$REMOTE")
+
 [merge]
   # Include summaries of merged commits in newly created merge commit messages.
-  log = true
-  tool = vimdiff
+  summary = true
+  stat = true
+  tool = phpstorm
 
 [mergetool]
   keepBackup = true
+  prompt = false
+  writeToTemp = true
 
-[push]
-  default = simple
+[mergetool "phpstorm"]
+  cmd = /Applications/PhpStorm.app/Contents/MacOS/phpstorm merge $(cd $(dirname "$LOCAL") && pwd)/$(basename "$LOCAL") $(cd $(dirname "$REMOTE") && pwd)/$(basename "$REMOTE") $(cd $(dirname "$BASE") && pwd)/$(basename "$BASE") $(cd $(dirname "$MERGED") && pwd)/$(basename "$MERGED")
+  trustExitCode = true
 
 [filter "lfs"]
   clean = git lfs clean %f
   smudge = git lfs smudge %f
   required = true
-
-# Use `origin` as the default remote on the `master` branch in all cases.
-[branch "master"]
-  remote = origin
-  merge = refs/heads/master
-
-#
-# URL shorthands
-#
 
 # github://<user>/<project>
 [url "git@github.com:"]
@@ -179,15 +208,3 @@
   insteadOf = "bitbucket.com://"
   pushInsteadOf = "bitbucket://"
   pushInsteadOf = "git://bitbucket.com"
-
-# stash://<repo>/<project>
-#[url "ssh://git@git/"]
-#  insteadOf = "stash://"
-#  pushInsteadOf = "stash://"
-#  pushInsteadOf = "ssh://git@git"
-
-# git://<user>/<repo>
-[url "git@gitlab.zintz.co:"]
-  insteadOf = "git://"
-  pushInsteadOf = "git://"
-  pushInsteadOf = "git://gitlab.zintz.co"
