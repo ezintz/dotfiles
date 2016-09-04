@@ -12,16 +12,13 @@
   precomposeunicode = false
 
   ## Treat spaces before tabs and all kinds of trailing whitespace as an error
-  ## trailing-space: looks for spaces at the end of a line
-  ## space-before-tab: looks for spaces before tabs at the beginning of a line
-  whitespace = fix,-indent-with-non-tab,trailing-space,cr-at-eol
+  whitespace = space-before-tab,trailing-space,cr-at-eol
 
   ## https://help.github.com/articles/dealing-with-line-endings
   autocrlf = input
   safecrlf = true
 
-  ## Set atom as default editor
-  editor = atom --wait
+  editor = vim
 
 [alias]
   a      = add
@@ -89,6 +86,10 @@
   rex = remote rm
   rem = remote rename
 
+  standup = log --pretty=one --since=yesterday
+  today = log --pretty=one --since=midnight
+  who = log --pretty=med --no-merges
+
   vtreelog = log --all --graph --decorate=short --color --format=vtree
   lt = !bash -c '"\
       while IFS=+ read -r hash time branch message; do\
@@ -97,20 +98,11 @@
         printf \"%${timelength}s    %s %s %s\n\" \"$time\" \"$hash\" \"$branch\" \"$message\";\
       done < <(git vtreelog && echo) | less -EFRXS"'
 
-  # All commits since yesterday.
-  standup = log --pretty=one --since=yesterday
-
-  # All commits since midnight.
-  today = log --pretty=one --since=midnight
-
-  # Find out who is currently active on the repository
-  who = log --pretty=med --no-merges
-
 [pretty]
   brief = "%C(yellow)%h%C(reset) %C(blue)%cr%C(reset) by %C(cyan)%cn%C(reset) %s %C(red)%d%C(reset)"
   med = "%n%C(bold)%C(yellow)Commit: %C(yellow)%H%C(reset)%n%C(bold)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B"
   detailed = "%n%C(bold)%C(yellow)Commit: %C(yellow)%H%C(red)%d%C(reset)%n%C(bold)Author:%C(reset) %C(cyan)%an <%ae>%n%C(bold)Date:%C(reset)   %C(blue)%ai (%ar)%C(reset)%n%+B"
-  vtree = %C(bold blue)%h%C(reset)+%C(bold black)(%cr)%C(reset)+%C(auto)%D%C(reset)++\n+++       %C(bold black)%an%C(reset)%C(black):%C(reset) %s
+  vtree = "%C(bold blue)%h%C(reset)+%C(bold black)(%cr)%C(reset)+%C(auto)%D%C(reset)++\n+++       %C(bold black)%an%C(reset)%C(black):%C(reset) %s"
 
 [color]
   branch      = auto
@@ -121,46 +113,33 @@
   pager       = true
   ui          = true
 
+## Colors can be defined as RGB, e.g.
+## [attributes] foreground [background]
 [color "branch"]
-  plain    = yellow
-  current  = magenta bold
-  local    = blue bold
-  remote   = white
-  upstream = green bold
-
-  #current = yellow reverse
-  #local   = yellow
-  #remote  = green
+  plain    = 250
+  current  = reverse bold 113
+  local    = 039
+  remote   = 113
+  upstream = bold 113
+  github   = bold 124
 
 [color "diff"]
-  plain      = normal
-  old        = red
-  new        = green
-  commit     = yellow
-  meta       = blue
-  frag       = cyan
-  func       = yellow bold
-  whitespace = red reverse
-  #meta = yellow bold
-  #frag = magenta bold
-  #old = red bold
-  #new = green bold
-  #whitespace = white reverse
+  plain      = 250
+  old        = 124
+  new        = 113
+  commit     = 220
+  meta       = 039
+  frag       = bold 220
+  func       = bold 166
+  whitespace = reverse 124
 
 [color "status"]
-  header    = black bold
-  added     = green bold
-  changed   = red
-  untracked = blue bold
-  branch    = green bold
-  nobranch  = red
-
-  # header = normal
-  # added = green
-  # changed = blue
-  # untracked = yellow
-  # branch = green
-  # nobranch = red
+  header    = 241
+  added     = 113
+  changed   = 039
+  untracked = 220
+  branch    = bold 92
+  nobranch  = 124
 
 [diff]
   tool = vimdiff
@@ -168,42 +147,41 @@
 [difftool "vimdiff"]
   prompt = false
 
-[difftool "phpstorm"]
-  cmd = /Applications/PhpStorm.app/Contents/MacOS/phpstorm diff $(cd $(dirname "$LOCAL") && pwd)/$(basename "$LOCAL") $(cd $(dirname "$REMOTE") && pwd)/$(basename "$REMOTE")
-
 [merge]
-  # Include summaries of merged commits in newly created merge commit messages.
+  ## Include summaries of merged commits in newly created merge commit messages.
   summary = true
   stat = true
-  tool = phpstorm
 
 [mergetool]
   keepBackup = true
   prompt = false
   writeToTemp = true
 
-[mergetool "phpstorm"]
-  cmd = /Applications/PhpStorm.app/Contents/MacOS/phpstorm merge $(cd $(dirname "$LOCAL") && pwd)/$(basename "$LOCAL") $(cd $(dirname "$REMOTE") && pwd)/$(basename "$REMOTE") $(cd $(dirname "$BASE") && pwd)/$(basename "$BASE") $(cd $(dirname "$MERGED") && pwd)/$(basename "$MERGED")
-  trustExitCode = true
-
 [filter "lfs"]
   clean = git lfs clean %f
   smudge = git lfs smudge %f
   required = true
 
-# github://<user>/<project>
+[gitflow "prefix"]
+  feature = feature/
+  release = release/
+  hotfix = hotfix/
+  support = support/
+  versiontag = v
+
+## github://<user>/<project>
 [url "git@github.com:"]
   insteadOf = "github.com://"
   pushInsteadOf = "github://"
   pushInsteadOf = "git://github.com"
 
-# gist://<id>
+## gist://<id>
 [url "git@gist.github.com:"]
   insteadOf = "gist://"
   pushInsteadOf = "gist://"
   pushInsteadOf = "git://gist.github.com"
 
-# bitbucket://<user>/<project>
+## bitbucket://<user>/<project>
 [url "git@bitbucket.com:"]
   insteadOf = "bitbucket.com://"
   pushInsteadOf = "bitbucket://"
