@@ -106,7 +106,7 @@ if is_osx; then
     seek_confirmation "Do you want to install homebrew now?"
     if is_confirmed; then
       print_notice "Downloading Homebrew ..."
-      ruby -e "$(curl -fsSkL raw.github.com/mxcl/homebrew/go)"
+      /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     fi
     abort "Homebrew must be installed. For more information visit the website: http://mxcl.github.io/homebrew" 1
   fi

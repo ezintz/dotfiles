@@ -7,8 +7,12 @@ HashKnownHosts no
 #ConnectTimeout 2
 
 # My Hosts
-#Host hostname hostname.fqdn.com
-#    Hostname hostname.fqdn.com
+# Host hostname hostname.fqdn.com
+#   Hostname hostname.fqdn.com
+
+# See: https://jira.atlassian.com/browse/BSERV-7763
+Host bitbucket.org
+  ControlMaster no
 
 #
 # Default
