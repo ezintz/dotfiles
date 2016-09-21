@@ -18,7 +18,7 @@ Default set of settings for Mac OS X which are gratuitously stolen from [@mathia
 * [ack](http://beyondgrep.com/): Tool like grep, optimized for programmers.
 * [curl](http://curl.haxx.se/): Tool for client-side URL transfers.
 * [flow](http://flowtype.org/): Adds static typing to JavaScript to improve developer productivity and code quality.
-* [fortune](https://en.wikipedia.org/wiki/Fortune_(Unix): Simple program that displays a pseudorandom message from a database of quotation.
+* [fortune](https://en.wikipedia.org/wiki/Fortune_(Unix)): Simple program that displays a pseudorandom message from a database of quotation.
 * [git](http://git-scm.com/): Distributed version control system.
 * [git-extras](https://github.com/tj/git-extras): Some extras for `git`
 * [git-flow](https://github.com/nvie/gitflow): Extension to provide high-level repository operations.
