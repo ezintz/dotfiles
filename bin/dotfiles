@@ -1,41 +1,41 @@
 #!/usr/bin/env zsh
+## TODO: Migrate this to node.js (:
 
-# Ensure colors are available.
+## Ensure colors are available.
 autoload -U colors && colors
 
-# Path where the dotfiles will be placed.
+## Path where the dotfiles will be placed.
 DOTFILES_DIRECTORY="${HOME}/.dotfiles"
-# Git remote repository
+
+## Git remote repository
 DOTFILES_GIT_REMOTE="https://github.com/ezintz/dotfiles.git"
 
-# Homebrew formulae
+## Homebrew formulae
 DESIRED_HOMEBREW_FORMULAE=(
-  'coreutils'
-  'git'
-  'git-extras'
-  'git-flow'
-  'wget'
-  'curl'
-  'python'
   'ack'
-  'node'
-  'tmux'
-  'flow'
-  'fortune'
-  'watchman'
+  'coreutils'
+  'curl'
   'docker'
   'docker-compose'
   'docker-machine'
+  'fortune'
+  'git'
+  'git-extras'
+  'git-flow'
+  'jq'
+  'node'
+  'python'
+  'reattach-to-user-namespace'
+  'tmux'
+  'wget'
 )
 
-# NPM packages
+## NPM packages
 DESIRED_NPM_PACKAGES=(
   'n'
-  'babel'
-  'gulp'
 )
 
-# Python packages
+## Python packages
 DESIRED_PIP_PACKAGES=(
   'pygments'
 )
@@ -45,15 +45,15 @@ if [[ ! -d ${DOTFILES_DIRECTORY} ]]; then
   git clone --recursive ${DOTFILES_GIT_REMOTE} ${DOTFILES_DIRECTORY}
 fi
 
-# Change directory to our dotfiles.
+## Change directory to our dotfiles.
 cd ${DOTFILES_DIRECTORY}
 
-# Load helpers
+## Load helpers
 source ${DOTFILES_DIRECTORY}/bin/_helpers
 
-# Create symbolic links in home directory.
-# $1 - Source file
-# $2 - Target file
+## Create symbolic links in home directory.
+## $1 - Source file
+## $2 - Target file
 function link {
   ln -fs "${DOTFILES_DIRECTORY}/${1}" "${HOME}/${2}"
 }
@@ -74,14 +74,17 @@ function mirror_files {
   link "prezto/runcoms/zpreztorc" ".zpreztorc"
   link "prezto/runcoms/zshenv" ".zshenv"
 
-  # Do not create a link if there exists a file as the .zshrc could contain
-  # a location configuration.
+  link "tmux/tmux.conf" ".tmux.conf"
+  mkdir "${HOME}/.tmux"
+  link "tmux/plugins" ".tmux/plugins"
+
+  ## Do not create a link for the `.zshrc` since it might contain local configuration.
   if [[ ! -e $HOME/.zshrc ]]; then
     link "prezto/runcoms/zshrc" ".zshrc"
   fi
 }
 
-# Test for known flags
+## Test for known flags.
 for opt in $@
 do
   case $opt in
@@ -93,14 +96,14 @@ do
   esac
 done
 
-# If the host is running Mac OS X
-if is_osx; then
-  # Before relying on Homebrew, check that packages can be compiled
+## If the host is running MacOS.
+if is_macos; then
+  ## Before relying on Homebrew, check that packages can be compiled.
   if ! type_exists 'gcc'; then
     abort "The XCode Command Line Tools must be installed first. Download them from https://developer.apple.com/downloads" 1
   fi
 
-  # Check for Homebrew
+  ## Check for Homebrew
   if ! type_exists 'brew'; then
     print_header "Installing Homebrew ..."
     seek_confirmation "Do you want to install homebrew now?"
@@ -112,31 +115,34 @@ if is_osx; then
   fi
 fi
 
-# Install or update packages
+## Install or update packages.
 if [ $no_packages ]; then
   print_notice "Skipped installation of additional packages."
 else
-  # Installing Homebrew formulae only on hosts that are running Mac OS X
-  if is_osx; then;
+  ## Installing Homebrew formulae only on hosts that are running MacOS.
+  if is_macos; then;
     install_brew_formulae
   fi
 
-  # Install pip packages
+  ## Install pip packages.
   install_pip_packages
 
-  # Install node.js packages
+  ## Install node.js packages.
   install_npm_packages
+
+  ## Install tmux plugins managed by TPM.
+  install_tmux_plugins
 fi
 
-# Conditionally sync with the remote repository
+## Conditionally sync with the remote repository.
 if [ $no_sync ]; then
   print_notice "Skipped dotfiles synchronization."
 else
   print_notice "Syncing dotfiles ..."
-  # Pull down the latest changes
+  ## Pull down the latest changes.
   git pull --rebase origin master
-  # Update submodules
-  git submodule update --recursive
+  ## Sync submodules.
+  git submodule sync --recursive
   print_success "... done!"
 fi
 
@@ -153,12 +159,12 @@ else
     print_notice "Skipped mirroring dotfiles."
   fi
 
-  if is_osx; then
+  if is_macos; then
     print_header "OS X settings update"
     seek_confirmation "Warning: This step may overwrite your OS X settings."
     if is_confirmed; then
       print_notice "Updating settings ..."
-      source bin/_osx
+      source bin/_macos
       print_success "... done!"
       print_notice "Note that some of these changes require a logout/restart to take effect."
     else

@@ -4,7 +4,7 @@
   # attributesfile = ~/.gitattributes
 
   ## Make `git rebase` safer on OS X
-  ## More info: <http://www.git-tower.com/blog/make-git-rebase-safe-on-osx/>
+  ## More info: http://www.git-tower.com/blog/make-git-rebase-safe-on-osx/
   trustctime = false
 
   ## Prevent showing files whose names contain non-ASCII symbols as unversioned.
@@ -19,6 +19,11 @@
   safecrlf = true
 
   editor = vim
+
+[include]
+  ## Expand the configuration by including the local configuration. With this trick I can keep my
+  ## gitconfig clean (without adding personal information).
+  path = ~/.gitauthor ; expand "foo" in your `$HOME` directory
 
 [alias]
   a      = add
@@ -97,6 +102,7 @@
         timelength=$(echo \"16+${#time}-${#timelength}\" | bc);\
         printf \"%${timelength}s    %s %s %s\n\" \"$time\" \"$hash\" \"$branch\" \"$message\";\
       done < <(git vtreelog && echo) | less -EFRXS"'
+  ignore = "!gi() { curl -L -s https://www.gitignore.io/api/$@ ;}; gi"
 
 [pretty]
   brief = "%C(yellow)%h%C(reset) %C(blue)%cr%C(reset) by %C(cyan)%cn%C(reset) %s %C(red)%d%C(reset)"
@@ -146,6 +152,10 @@
 
 [difftool "vimdiff"]
   prompt = false
+
+[branch]
+  ## Try to rebase instead of merging for all new created branches.
+  autosetuprebase = always
 
 [merge]
   ## Include summaries of merged commits in newly created merge commit messages.

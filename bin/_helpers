@@ -1,5 +1,5 @@
-# Host is a Mac OSX
-function is_osx {
+## Host runs MacOS
+function is_macos {
   if [[ "$OSTYPE" != darwin* ]]; then
     return 1
   fi
@@ -7,7 +7,7 @@ function is_osx {
   return 0
 }
 
-# Host is Linux based
+## Host runs a Linux based distribution
 function is_linux {
   if [[ "$OSTYPE" != linux* ]]; then
     return 1
@@ -166,8 +166,16 @@ function install_pip_packages {
   fi
 }
 
+function install_tmux_plugins {
+  print_header "Installing tmux plugins..."
+  /usr/bin/env bash ${DOTFILES_DIRECTORY}/tmux/plugins/tpm/scripts/install_plugins.sh
+
+  print_header "Updating tmux plugins..."
+  /usr/bin/env bash ${DOTFILES_DIRECTORY}/tmux/plugins/tpm/scripts/update_plugin.sh all
+}
+
 function setup_git {
-  if [[ -n $(git config --global user.name) ]]; then
+  if [[ -n $(git config --file ~/.gitauthor user.name) ]]; then
     return 0
   fi
 
@@ -184,8 +192,8 @@ function setup_git {
 
   seek_confirmation "Configure Git with username \"${username}\" and e-mail \"${email}\""
   if is_confirmed; then
-    git config --global user.name $username
-    git config --global user.email $email
+    git config --file ~/.gitauthor user.name $username
+    git config --file ~/.gitauthor user.email $email
     print_success "... done!"
   else
     print_warning "You should configure your Git identity. See also http://git-scm.com/book/en/v2/Getting-Started-First-Time-Git-Setup"

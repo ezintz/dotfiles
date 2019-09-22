@@ -1,3 +1,16 @@
 [submodule "prezto"]
+	branch = master
 	path = prezto
 	url = https://github.com/ezintz/prezto.git
+[submodule "tmux-tpm"]
+	branch = master
+	path = tmux/plugins/tpm
+	url = https://github.com/tmux-plugins/tpm.git
+[submodule "tmux-sensible"]
+	branch = master
+	path = tmux/plugins/tmux-sensible
+	url = https://github.com/tmux-plugins/tmux-sensible.git
+[submodule "tmux-yank"]
+	branch = master
+	path = tmux/plugins/tmux-yank
+	url = https://github.com/tmux-plugins/tmux-yank.git
