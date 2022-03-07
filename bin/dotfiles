@@ -140,7 +140,7 @@ if [ $no_sync ]; then
 else
   print_notice "Syncing dotfiles ..."
   ## Pull down the latest changes.
-  git pull --rebase origin master
+  git pull --rebase origin main
   ## Sync submodules.
   git submodule sync --recursive
   print_success "... done!"
