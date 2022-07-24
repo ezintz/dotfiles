@@ -15,29 +15,34 @@ DESIRED_HOMEBREW_FORMULAE=(
   'ack'
   'coreutils'
   'curl'
-  'docker'
-  'docker-compose'
-  'docker-machine'
   'fortune'
   'git'
   'git-extras'
   'git-flow'
-  'jq'
   'node'
-  'python'
   'reattach-to-user-namespace'
   'tmux'
   'wget'
 )
 
-## NPM packages
-DESIRED_NPM_PACKAGES=(
-  'n'
+DESIRED_HOMEBREW_CASK_FORMULAE=(
+  '1password'
+  'google-chrome'
+  'google-drive'
+  'docker'
+  'dropbox'
+  'microsoft-edge'
+  'sequel-ace'
+  'skype'
+  'spotify'
+  'visual-studio-code'
+  'webstorm'
 )
 
-## Python packages
-DESIRED_PIP_PACKAGES=(
-  'pygments'
+## NPM packages
+DESIRED_NPM_PACKAGES=(
+  '@angular/cli'
+  'npm-check'
 )
 
 
@@ -122,10 +127,8 @@ else
   ## Installing Homebrew formulae only on hosts that are running MacOS.
   if is_macos; then;
     install_brew_formulae
+    install_brew_cask_formulae
   fi
-
-  ## Install pip packages.
-  install_pip_packages
 
   ## Install node.js packages.
   install_npm_packages
