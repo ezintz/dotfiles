@@ -63,8 +63,7 @@
   lh     = shortlog --summary --numbered
 
   m      = merge
-  mom    = merge origin/master
-  mod    = merge origin/develop
+  mom    = merge origin/main
 
   p      = push
   pa     = push --all
@@ -191,8 +190,8 @@
   pushInsteadOf = "gist://"
   pushInsteadOf = "git://gist.github.com"
 
-## bitbucket://<user>/<project>
-[url "git@bitbucket.com:"]
-  insteadOf = "bitbucket.com://"
-  pushInsteadOf = "bitbucket://"
-  pushInsteadOf = "git://bitbucket.com"
+## gitlab://<user>/<project>
+[url "git@gitlab.com:"]
+  insteadOf = "gitlab.com://"
+  pushInsteadOf = "gitlab://"
+  pushInsteadOf = "git://gitlab.com"

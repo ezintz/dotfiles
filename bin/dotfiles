@@ -1,5 +1,4 @@
 #!/usr/bin/env zsh
-## TODO: Migrate this to node.js (:
 
 ## Ensure colors are available.
 autoload -U colors && colors
@@ -134,7 +133,7 @@ else
   install_npm_packages
 
   ## Install tmux plugins managed by TPM.
-  install_tmux_plugins
+  #install_tmux_plugins
 fi
 
 ## Conditionally sync with the remote repository.

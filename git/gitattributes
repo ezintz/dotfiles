@@ -1,79 +1,73 @@
-#
-# Automatically detect text files and normalize line endings for all text-based files
-# http://davidlaing.com/2012/09/19/customise-your-gitattributes-to-become-a-git-ninja/
-#
+##
+## Automatically detect text files and normalize line endings for all text-based files
+## http://davidlaing.com/2012/09/19/customise-your-gitattributes-to-become-a-git-ninja/
+##
 * text=auto
 
-# Encrypt the repository
-# Remove/modify this line if the repository is meant to be open-source
+## If repository is open source, please modify encryption below.
 #*.* filter=git-crypt diff=git-crypt
 .gitattributes !filter !diff
 
-# .files
-*.bowerrc text
-.csslintrc text
-.editorconfig text
+## .files
+*.bowerrc      text
+.csslintrc     text
+.editorconfig   text
+.eslintrc      text
 .gitattributes text
-.gitignore text
-.htaccess text
-.jshintrc text
-.jscsrc text
-.jshintignore text
-*.npmignore text
+.gitignore     text
+.htaccess      text
+.jshintrc      text
+.jscsrc        text
+.jshintignore  text
+.prettierrc    text
+.stylelintrc   text
+*.npmignore    text
 
 # Source code
-*.php text
-*.inc text
-*.css text
+*.bash  text
+*.bat  text
+*.css  text
+*.htm  text
+*.html text
+*.ini  text
+*.js   text
+*.json text
+*.less text
+*.md   text
+*.php  text
+*.py   text
+*.rb   text
 *.sass text
 *.scss text
-*.less text
+*.sh   text
 *.styl text
-*.js text
-*.coffee text
-*.json text
-*.htm text
-*.html text
-*.xml text
-*.txt text
-*.ini text
-*.md text
-*.rb text
-*.py text
-*.sql text
-*.sh text
-*.bat text
+*.sql  text
+*.ts   text
+*.txt  text
+*.xml  text
+*.zsh  text
 
-# These files are binary and should be left untouched
-# (binary is a macro for -text -diff)
-*.png   binary
+## These files are binary and should be left untouched (binary is a macro for -text -diff).
+*.7z    binary
+*.flv    binary
+*.gif   binary
+*.gz    binary
+*.ico   binary
 *.jpg   binary
 *.jpeg  binary
-*.gif   binary
-*.ico   binary
 *.mov   binary
 *.mp4   binary
 *.mp3   binary
-*.flv   binary
-*.fla   binary
+*.png   binary
 *.swf   binary
-*.gz    binary
-*.zip   binary
-*.7z    binary
 *.ttf   binary
+*.zip   binary
 
-# Documents
+## Documents
 *.doc  diff=astextplain
-*.DOC  diff=astextplain
 *.docx diff=astextplain
-*.DOCX diff=astextplain
-*.xls  diff=astextplain
-*.XLS  diff=astextplain
-*.xlsx diff=astextplain
-*.XLSX diff=astextplain
 *.dot  diff=astextplain
-*.DOT  diff=astextplain
 *.pdf  diff=astextplain
-*.PDF  diff=astextplain
 *.rtf  diff=astextplain
-*.RTF  diff=astextplain
+*.xls  diff=astextplain
+*.xlsx diff=astextplain
