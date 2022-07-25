@@ -59,6 +59,15 @@ source ${DOTFILES_DIRECTORY}/bin/_helpers
 ## $1 - Source file
 ## $2 - Target file
 function link {
+  if [[ -L "${HOME}/${2}" ]]; then
+    return
+  fi
+
+  if [[ -f "${HOME}/${2}" ]]; then
+    echo "File '${HOME}/${2}' exists, creating a backup as '${HOME}/${2}_backup'"
+    cp "${HOME}/${2}" "${HOME}/${2}_backup"
+fi
+
   ln -fs "${DOTFILES_DIRECTORY}/${1}" "${HOME}/${2}"
 }
 
@@ -67,6 +76,7 @@ function mirror_files {
   link "wgetrc" ".wgetrc"
 
   link "ssh/config" ".ssh/config"
+  link "ssh/config.d" ".ssh/config.d"
 
   link "git/gitignore" ".gitignore"
   link "git/gitattributes" ".gitattributes"
