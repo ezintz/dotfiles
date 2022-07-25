@@ -596,7 +596,18 @@ defaults write com.apple.Terminal ShowLineMarks -int 0
 ## Don’t display the annoying prompt when quitting iTerm
 defaults write com.googlecode.iterm2 PromptOnQuit -bool false
 
+## Do not show window numbers.
+defaults write com.googlecode.iterm2 WindowNumber -bool false
+
+## tmux integration.
+defaults write com.googlecode.iterm2 AutoHideTmuxClientSession -bool true
+defaults write com.googlecode.iterm2 NoSyncNewTabFromTmuxOpensTmux -bool true
+defaults write com.googlecode.iterm2 "NoSyncNewTabFromTmuxOpensTmux_selection" -bool false
+defaults write com.googlecode.iterm2 UseTmuxStatusBar -bool true
+defaults write com.googlecode.iterm2 TmuxUsesDedicatedProfile -bool true
+
 ## Set default directory for iTerm2 preferences.
+defaults write com.googlecode.iterm2 LoadPrefsFromCustomFolder -bool true
 defaults write com.googlecode.iterm2 PrefsCustomFolder "${HOME}/.dotfiles/iterm2"
 
 ##
@@ -733,28 +744,46 @@ defaults write com.operasoftware.Opera PMPrintingExpandedStateForPrint2 -boolean
 defaults write com.operasoftware.OperaDeveloper PMPrintingExpandedStateForPrint2 -boolean true
 
 ##
+## HyperSwitch
+##
+
+defaults write ccom.bahoom.HyperSwitch run_in_background -boolean true
+defaults write ccom.bahoom.HyperSwitch welcome_window_shown -boolean true
+defaults write ccom.bahoom.HyperSwitch app_switcher_auto_activate -boolean true
+defaults write ccom.bahoom.HyperSwitch app_switcher_auto_activate_delay -int 750
+defaults write ccom.bahoom.HyperSwitch shift_to_cycle_backwards -boolean true
+defaults write ccom.bahoom.HyperSwitch window_preview_size -float 190.0
+defaults write ccom.bahoom.HyperSwitch window_switcher_current_app_keycode -int 48
+defaults write ccom.bahoom.HyperSwitch window_switcher_mod -int 2
+
+##
 ## Kill affected applications
 ##
 
 for app in "Activity Monitor" \
-	"Address Book" \
-	"Calendar" \
-	"cfprefsd" \
-	"Contacts" \
-	"Dock" \
-	"Finder" \
-	"Google Chrome Canary" \
-	"Google Chrome" \
-	"Mail" \
-	"Messages" \
-	"Opera" \
-	"Photos" \
-	"Safari" \
-	"SystemUIServer" \
-	"Terminal" \
-	"Twitter" \
-	"iCal"; do
-	killall "${app}" &> /dev/null
+  "Address Book" \
+  "Calendar" \
+  "cfprefsd" \
+  "Contacts" \
+  "Dock" \
+  "Docker" \
+  "Finder" \
+  "Google Chrome Canary" \
+  "Google Chrome" \
+  "HyperDock" \
+  "HyperSwitch" \
+  "Mail" \
+  "Messages" \
+  "Microsoft Edge" \
+  "Photos" \
+  "Safari" \
+  "Sequel Ace" \
+  "Skype" \
+  "SystemUIServer" \
+  "WebStorm" \
+  "Visual Studio Code" \
+  "iCal"; do
+  killall "${app}" &> /dev/null
 done
 
 seek_confirmation "Done. Note that some of these changes require a logout/restart to take effect."
