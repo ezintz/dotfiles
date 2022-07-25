@@ -1,20 +1,103 @@
-#
-# Compiled source
-#
-*.com
-*.class
-*.dll
-*.exe
-*.o
-*.so
-*.pyc
-*.pyo
+### Operating systems (Linux, macOS and Windows)
+## Linux
+*~
+.directory
 
-#
-# Packages
-#
-# it's better to unpack these files and commit the raw source
-# git has its own built in compression methods
+## macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Thumbnails
+._*
+
+## Windows
+Thumbs.db
+*.stackdump
+
+# Folder configuration
+[Dd]esktop.ini
+
+# Shortcuts
+*.lnk
+
+### Editors and IDEs
+## Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Local history files
+.history
+.ionide
+
+## JetBrains IDEs (WebStrom, PhpStorm)
+# User-specific stuff
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries
+.idea/**/shelf
+
+# Generated files
+.idea/**/contentModel.xml
+
+# Sensitive or high-churn files
+.idea/**/dataSources/
+.idea/**/dataSources.ids
+.idea/**/dataSources.local.xml
+.idea/**/sqlDataSources.xml
+.idea/**/dynamic.xml
+.idea/**/uiDesigner.xml
+.idea/**/dbnavigator.xml
+
+# Database Navigator
+# https://plugins.jetbrains.com/plugin/1800-database-navigator
+.idea/**/dbnavigator.xml
+
+# Editor-based Rest Client
+.idea/httpRequests
+
+# Sonarlint plugin
+# https://plugins.jetbrains.com/plugin/7973-sonarlint
+.idea/**/sonarlint/
+
+# SonarQube Plugin
+# https://plugins.jetbrains.com/plugin/7238-sonarqube-community-plugin
+.idea/**/sonarIssues.xml
+
+
+### Miscellaneous
+## Node.js, NPM and Yarn
+.npm
+.yarn
+.yarn-integrity
+node_modules
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+## Cache
+.cache
+.sass-cache
+.eslintcache
+.stylelintcache
+## Runtime data
+*.pid*
+
+## Logfiles
+logs
+*.log*
+
+## environment specific files
+.env
+.env.test
+.env*.local
+
+## Archives
+## It's better to unpack these files and commit the raw source, or use
+## https://git-lfs.github.com/ for large files.
+## Git has its own built in compression methods.
 *.7z
 *.dmg
 *.gz
@@ -24,42 +107,15 @@
 *.tar
 *.zip
 
-#
-# Logs and databases
-#
-*.log
+## Databases
 *.sqlite
 
-#
-# OS generated files
-#
-._*
-.cache
-.DS_Store
-.Spotlight-V100
-.Trashes
-Icon?
-Thumbs.db
-Desktop.ini
-
-#
-# IDE generated files
-#
-.idea
-.eclipse
-.nbproject
-nbproject
-
-#
-# Other vcs
-#
+## Other version control systems
 .hg
 .svn
 svn-commit.*
 
-#
-# Miscellaneous
-#
+## Usually created backup files
 *.bak
 *.orig
 *.swp
