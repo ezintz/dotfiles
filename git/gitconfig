@@ -25,6 +25,9 @@
   ## gitconfig clean (without adding personal information).
   path = ~/.gitauthor ; expand "foo" in your `$HOME` directory
 
+[init]
+  defaultBranch = main
+
 [alias]
   a      = add
   b      = branch
@@ -155,6 +158,9 @@
 [branch]
   ## Try to rebase instead of merging for all new created branches.
   autosetuprebase = always
+
+[status]
+  submoduleSummary = true
 
 [merge]
   ## Include summaries of merged commits in newly created merge commit messages.

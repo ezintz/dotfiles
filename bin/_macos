@@ -757,6 +757,15 @@ defaults write ccom.bahoom.HyperSwitch window_switcher_current_app_keycode -int 
 defaults write ccom.bahoom.HyperSwitch window_switcher_mod -int 2
 
 ##
+## Set default applications
+##
+
+## Assign visual studio code as default to some file types.
+duti -s com.microsoft.VSCode public.plain-text all
+duti -s com.microsoft.VSCode public.unix-executable all
+duti -s com.microsoft.VSCode public.data all
+
+##
 ## Kill affected applications
 ##
 

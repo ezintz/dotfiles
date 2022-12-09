@@ -358,6 +358,10 @@
 	<true/>
 	<key>IRMemory</key>
 	<integer>4</integer>
+	<key>NeverWarnAboutShortLivedSessions_52B47CC5-E859-4C50-842A-F70828F900D8</key>
+	<true/>
+	<key>NeverWarnAboutShortLivedSessions_52B47CC5-E859-4C50-842A-F70828F900D8_selection</key>
+	<integer>0</integer>
 	<key>New Bookmarks</key>
 	<array>
 		<dict>
@@ -1437,7 +1441,7 @@
 				<real>0.67058825492858887</real>
 			</dict>
 			<key>Guid</key>
-			<string>724E9483-3F87-4109-9D67-6C42CB1D8A5C</string>
+			<string>EFF589CB-D00E-432F-BC99-200EF35BEC19</string>
 			<key>Has Hotkey</key>
 			<false/>
 			<key>Horizontal Spacing</key>
@@ -1816,7 +1820,7 @@
 			<key>Title Components</key>
 			<integer>512</integer>
 			<key>Transparency</key>
-			<real>0.15249833776595756</real>
+			<real>0.14999999999999999</real>
 			<key>Unlimited Scrollback</key>
 			<true/>
 			<key>Use Bold Font</key>
@@ -1843,6 +1847,8 @@
 	<false/>
 	<key>OpenNoWindowsAtStartup</key>
 	<false/>
+	<key>OpenTmuxWindowsIn</key>
+	<integer>0</integer>
 	<key>PointerActions</key>
 	<dict>
 		<key>Button,1,1,,</key>
@@ -1893,6 +1899,12 @@
 	<key>VisualIndicatorForEsc</key>
 	<false/>
 	<key>WindowNumber</key>
+	<false/>
+	<key>findMode_iTerm</key>
+	<integer>0</integer>
+	<key>kCPKSelectionViewPreferredModeKey</key>
+	<integer>0</integer>
+	<key>kCPKSelectionViewShowHSBTextFieldsKey</key>
 	<false/>
 </dict>
 </plist>
