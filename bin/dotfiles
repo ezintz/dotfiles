@@ -75,6 +75,9 @@ fi
 }
 
 function mirror_files {
+  ## ensure ssh control path directory exists
+  mkdir -p ~/.ssh/control/
+
   link "curlrc" ".curlrc"
   link "wgetrc" ".wgetrc"
 

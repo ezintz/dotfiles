@@ -1,29 +1,22 @@
-#
-# Global Settings
-#
+## Global Settings
 ForwardAgent yes
 #VisualHostKey yes
 HashKnownHosts no
 #ConnectTimeout 2
 
-# My Hosts
-# Host hostname hostname.fqdn.com
-#   Hostname hostname.fqdn.com
+Include ~/.orbstack/ssh/config
+Include ~/.ssh/config.d/*
 
 # See: https://jira.atlassian.com/browse/BSERV-7763
 Host bitbucket.org
   ControlMaster no
 
-#
-# Default
-#
+# Defaults for all SSH connections
 Host *
   StrictHostKeyChecking ask
+  ControlMaster auto
+  ControlPath ~/.ssh/control/%r@%h:%p
+  ControlPersist 8h
+  KeepAlive yes
   ServerAliveCountMax 6
   ServerAliveInterval 60
-  KeepAlive yes
-  ControlMaster auto
-  ControlPath ~/.ssh/%r@%h:%p
-  ControlPersist 8h
-
-Include config.d/*
