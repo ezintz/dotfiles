@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "sh /Users/eduard.zintz/.claude/statusline-command.sh"
+  },
+  "effortLevel": "medium",
+  "awaySummaryEnabled": false,
+  "skipDangerousModePermissionPrompt": true,
+  "remoteControlAtStartup": true,
+  "skipAutoPermissionPrompt": true,
+  "theme": "light-ansi"
+}

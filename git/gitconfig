@@ -24,6 +24,7 @@
   ## Expand the configuration by including the local configuration. With this trick I can keep my
   ## gitconfig clean (without adding personal information).
   path = ~/.gitauthor ; expand "foo" in your `$HOME` directory
+  path = ~/.gitconfig.local
 
 [init]
   defaultBranch = main

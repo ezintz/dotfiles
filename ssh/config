@@ -20,3 +20,6 @@ Host *
   KeepAlive yes
   ServerAliveCountMax 6
   ServerAliveInterval 60
+  AddKeysToAgent yes
+  IgnoreUnknown UseKeychain
+  UseKeychain yes
