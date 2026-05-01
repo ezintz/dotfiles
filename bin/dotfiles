@@ -12,10 +12,12 @@ DOTFILES_GIT_REMOTE="https://github.com/ezintz/dotfiles.git"
 ## Homebrew formulae
 DESIRED_HOMEBREW_FORMULAE=(
   'ack'
+  'bat'
   'coreutils'
   'curl'
   'duti'
   'fortune'
+  'jq'
   'git'
   'git-extras'
   'git-flow'
@@ -24,21 +26,26 @@ DESIRED_HOMEBREW_FORMULAE=(
   'node'
   'reattach-to-user-namespace'
   'tmux'
+  'wireguard-tools'
   'wget'
 )
 
 DESIRED_HOMEBREW_CASK_FORMULAE=(
   '1password'
-  'google-chrome'
-  'google-drive'
   'docker'
   'dropbox'
+  'google-chrome'
+  'google-drive'
+  'krisp'
   'microsoft-edge'
+  'microsoft-teams'
+  'orbstack'
   'sequel-ace'
+  'slack'
   'skype'
-  'spotify'
+  'stats'
   'visual-studio-code'
-  'webstorm'
+  'jetbrains-toolbox'
 )
 
 ## NPM packages
