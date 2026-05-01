@@ -56,17 +56,15 @@ make_bar() {
   printf "%s" "$bar"
 }
 
-# Elapsed time since window start = window_secs - (resets_at - now)
+# Time remaining until window resets
 elapsed_str() {
-  reset_at="$1"; window_secs="$2"
+  reset_at="$1"
   now=$(date +%s)
   remaining=$(( reset_at - now ))
   [ "$remaining" -lt 0 ] && remaining=0
-  elapsed=$(( window_secs - remaining ))
-  [ "$elapsed" -lt 0 ] && elapsed=0
-  d=$(( elapsed / 86400 ))
-  h=$(( (elapsed % 86400) / 3600 ))
-  m=$(( (elapsed % 3600) / 60 ))
+  d=$(( remaining / 86400 ))
+  h=$(( (remaining % 86400) / 3600 ))
+  m=$(( (remaining % 3600) / 60 ))
   if   [ "$d" -gt 0 ]; then printf "%dd %dh %dm" "$d" "$h" "$m"
   elif [ "$h" -gt 0 ]; then printf "%dh %dm" "$h" "$m"
   else printf "%dm" "$m"
@@ -211,7 +209,7 @@ if [ -n "$rl_5h_pct" ] && [ -n "$rl_5h_reset" ]; then
   c=$(color_for_pct "$rl_5h_pct")
   bar=$(make_bar "$rl_5h_pct")
   pct_int=$(printf "%.0f" "$rl_5h_pct")
-  elapsed=$(elapsed_str "$rl_5h_reset" 18000)
+  elapsed=$(elapsed_str "$rl_5h_reset")
   line2="${c}${bar} ${pct_int}%${RESET} ↻ ${elapsed} (💰 $(fmt_cost "$session_cost"))"
 fi
 
@@ -222,7 +220,7 @@ if [ -n "$rl_7d_pct" ] && [ -n "$rl_7d_reset" ]; then
   c=$(color_for_pct "$rl_7d_pct")
   bar=$(make_bar "$rl_7d_pct")
   pct_int=$(printf "%.0f" "$rl_7d_pct")
-  elapsed=$(elapsed_str "$rl_7d_reset" 604800)
+  elapsed=$(elapsed_str "$rl_7d_reset")
   line3="${c}${bar} ${pct_int}%${RESET} ↻ ${elapsed} (💰 $(fmt_cost "$total_cost"))"
 fi
 
