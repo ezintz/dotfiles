@@ -85,6 +85,42 @@ fi
   ln -fs "${DOTFILES_DIRECTORY}/${1}" "${HOME}/${2}"
 }
 
+## Merge tracked JSON settings into an existing file using jq, adding or
+## replacing only the keys defined in the source while preserving any other
+## keys already present in the destination (e.g. machine-specific permissions,
+## model, plugins). Falls back to a plain copy when the destination is absent.
+## $1 - Source file (relative to DOTFILES_DIRECTORY)
+## $2 - Target file (relative to HOME)
+function merge_json {
+  local src="${DOTFILES_DIRECTORY}/${1}"
+  local dest="${HOME}/${2}"
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "jq not found; skipping JSON merge for '${2}' (install jq to manage it)"
+    return
+  fi
+
+  mkdir -p "$(dirname "${dest}")"
+
+  ## No existing settings — just seed with the tracked defaults.
+  if [[ ! -e "${dest}" ]]; then
+    cp "${src}" "${dest}"
+    return
+  fi
+
+  ## Deep-merge tracked keys into the existing file (tracked values win),
+  ## reading through the destination even if it is a symlink from an older setup.
+  local tmp
+  tmp="$(mktemp)"
+  if jq -s '.[0] * .[1]' "${dest}" "${src}" >| "${tmp}" 2>/dev/null; then
+    rm -f "${dest}"   ## drop any pre-existing symlink so we write a real file
+    mv "${tmp}" "${dest}"
+  else
+    echo "Failed to merge JSON for '${2}'; leaving existing file untouched"
+    rm -f "${tmp}"
+  fi
+}
+
 function mirror_local_files {
   [[ -d "${DOTFILES_LOCAL_DIRECTORY}" ]] || return
 
@@ -128,9 +164,11 @@ function mirror_files {
   mkdir -p "${HOME}/.tmux"
   link "tmux/plugins" ".tmux/plugins"
 
-  mkdir -p "${HOME}/.claude"
+  mkdir -p "${HOME}/.claude/hooks"
+  link "claude/CLAUDE.md" ".claude/CLAUDE.md"
   link "claude/statusline-command.sh" ".claude/statusline-command.sh"
-  link "claude/settings.json" ".claude/settings.json"
+  link "claude/hooks/kubectl-env-guard.sh" ".claude/hooks/kubectl-env-guard.sh"
+  merge_json "claude/settings.json" ".claude/settings.json"
 
   ## Do not create a link for the `.zshrc` since it might contain local configuration.
   if [[ ! -e $HOME/.zshrc ]]; then

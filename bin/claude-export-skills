@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Export Claude Code user skills as zip files for uploading to claude.ai
+#
+# Usage:
+#   claude-export-skills                  # export all user skills
+#   claude-export-skills eddy-voice       # export only specific skill(s)
+
+set -euo pipefail
+
+SKILLS_DIR="$HOME/.claude/skills"
+OUT_DIR="$HOME/claude-skills"
+
+if [[ ! -d "$SKILLS_DIR" ]]; then
+  echo "No skills directory found at $SKILLS_DIR"
+  exit 1
+fi
+
+rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR"
+
+specific=("$@")
+exported=0
+
+for dir in "$SKILLS_DIR"/*/; do
+  [[ ! -d "$dir" ]] && continue
+  name="$(basename "$dir")"
+  [[ "$name" == .* ]] && continue
+  [[ ! -f "$dir/SKILL.md" ]] && continue
+
+  if [[ ${#specific[@]} -gt 0 ]]; then
+    match=false
+    for s in "${specific[@]}"; do
+      [[ "$s" == "$name" ]] && match=true
+    done
+    $match || continue
+  fi
+
+  (cd "$dir" && zip -r "$OUT_DIR/$name.zip" . -x '.*' > /dev/null)
+  size=$(du -h "$OUT_DIR/$name.zip" | cut -f1 | xargs)
+  echo "  $name.zip ($size)"
+  exported=$((exported + 1))
+done
+
+if [[ $exported -eq 0 ]]; then
+  echo "No skills exported."
+  exit 1
+fi
+
+echo ""
+echo "$exported skill(s) exported to $OUT_DIR"
+open "$OUT_DIR"

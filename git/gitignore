@@ -119,3 +119,10 @@ svn-commit.*
 *.bak
 *.orig
 *.swp
+
+## Claude Code per-project, machine-local artifacts — never commit into a repo.
+## .cc-writes/ is Claude's transient write-tracking/scratch dir; settings.local.json
+## holds this machine's local permission/settings overrides (companion to the
+## tracked settings.json).
+**/.claude/.cc-writes/
+**/.claude/settings.local.json
