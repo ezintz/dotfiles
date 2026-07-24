@@ -168,6 +168,7 @@ function mirror_files {
   link "claude/CLAUDE.md" ".claude/CLAUDE.md"
   link "claude/statusline-command.sh" ".claude/statusline-command.sh"
   link "claude/hooks/kubectl-env-guard.sh" ".claude/hooks/kubectl-env-guard.sh"
+  link "claude/hooks/terraform-env-guard.sh" ".claude/hooks/terraform-env-guard.sh"
   merge_json "claude/settings.json" ".claude/settings.json"
 
   ## Do not create a link for the `.zshrc` since it might contain local configuration.
