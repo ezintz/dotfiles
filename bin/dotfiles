@@ -218,6 +218,21 @@ function mirror_files {
   merge_json "claude/mcp.json" ".claude.json"
   mirror_skills
 
+  ## ~/.claude/skills and ~/.claude/rules can already hold plugin-managed
+  ## entries (e.g. context7-mcp, context7.md), so link individual entries
+  ## rather than the whole directory to avoid clobbering those.
+  mkdir -p "${HOME}/.claude/skills"
+  for skill_dir in "${DOTFILES_DIRECTORY}"/claude/skills/*(N/); do
+    local skill_name="$(basename "${skill_dir}")"
+    link "claude/skills/${skill_name}" ".claude/skills/${skill_name}"
+  done
+
+  mkdir -p "${HOME}/.claude/rules"
+  for rule_file in "${DOTFILES_DIRECTORY}"/claude/rules/*.md(N); do
+    local rule_name="$(basename "${rule_file}")"
+    link "claude/rules/${rule_name}" ".claude/rules/${rule_name}"
+  done
+
   ## Do not create a link for the `.zshrc` since it might contain local configuration.
   if [[ ! -e $HOME/.zshrc ]]; then
     link "prezto/runcoms/zshrc" ".zshrc"
