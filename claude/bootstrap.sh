@@ -53,7 +53,7 @@ command -v python3 >/dev/null 2>&1 || {
 mkdir -p "$CLAUDE_DIR/hooks"
 
 echo "→ downloading CLAUDE.md"
-fetch "$BASE/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+fetch "$BASE/global-instructions.md" "$CLAUDE_DIR/CLAUDE.md"
 
 for file in $SUPPORT; do
   echo "→ downloading $file"

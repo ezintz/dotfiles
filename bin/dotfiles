@@ -200,7 +200,10 @@ function mirror_files {
   link "tmux/plugins" ".tmux/plugins"
 
   mkdir -p "${HOME}/.claude/hooks"
-  link "claude/CLAUDE.md" ".claude/CLAUDE.md"
+  ## Named differently from the symlink target so Claude Code's in-repo
+  ## CLAUDE.md auto-discovery doesn't also load it a second time as a
+  ## project file when working inside this repo.
+  link "claude/global-instructions.md" ".claude/CLAUDE.md"
   link "claude/statusline-command.sh" ".claude/statusline-command.sh"
   ## Every guard sources guard-lib.sh, so it must be linked too or all four break.
   link "claude/hooks/guard-lib.sh" ".claude/hooks/guard-lib.sh"
