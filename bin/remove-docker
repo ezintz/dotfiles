@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+#brew remove --cask docker
+brew uninstall --formula docker --force
+
+sudo rm -rf \
+  /Applications/Docker.app \
+  ~/Library/Application\ Support/Docker\ Desktop \
+  ~/Library/Caches/com.docker.docker \
+  ~/Library/Cookies/com.docker.docker.binarycookies \
+  ~/Library/Group\ Containers/group.com.docker \
+  ~/Library/Logs/Docker\ Desktop \
+  ~/Library/Preferences/com.docker.docker.plist \
+  ~/Library/Preferences/com.electron.docker-frontend.plist \
+  ~/Library/Saved\ Application\ State/com.electron.docker-frontend.savedState \
+  /opt/homebrew/bin/.docker-slim-state \
+  ~/.docker/buildx \
+  ~/.docker/cli-plugins \
+  ~/.docker/contexts \
+  ~/.docker/run

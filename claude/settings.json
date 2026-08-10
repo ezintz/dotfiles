@@ -2,14 +2,30 @@
   "permissions": {
     "defaultMode": "auto"
   },
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "skill-creator@claude-plugins-official": true
+  },
   "statusLine": {
     "type": "command",
     "command": "sh ~/.claude/statusline-command.sh"
   },
+  "attribution": {
+    "commit": "🤖 Generated with Claude Code",
+    "pr": "🤖 Generated with Claude Code"
+  },
+  "includeCoAuthoredBy": false,
   "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "remoteControlAtStartup": true,
   "skipAutoPermissionPrompt": true,
-  "theme": "light-ansi"
+  "theme": "dark-ansi"
 }

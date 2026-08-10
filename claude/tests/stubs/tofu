@@ -1,0 +1,4 @@
+#!/bin/sh
+# Test stub: `terraform workspace show` without a real terraform install.
+printf '%s\n' "${TF_TEST_WORKSPACE:-moonbase}"
+exit 0

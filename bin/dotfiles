@@ -140,6 +140,43 @@ function mirror_local_files {
   done
 }
 
+## Link Claude Code skills into ~/.claude/skills, which Claude scans one level
+## deep for <name>/SKILL.md. Skills come from three tiers:
+##   1. tracked   ${DOTFILES_DIRECTORY}/claude/skills   -> public, pushed to GitHub
+##   2. private   ${DOTFILES_LOCAL_DIRECTORY}/claude/skills -> private overlay repo
+##   3. local     plain directories in ~/.claude/skills  -> this machine only
+## Only tiers 1 and 2 are linked; a real directory always wins over a link so a
+## machine-local skill is never clobbered by a tracked one of the same name.
+function mirror_skills {
+  local skills_dir="${HOME}/.claude/skills"
+  mkdir -p "${skills_dir}"
+
+  ## Prune dangling links left behind by skills renamed or removed upstream.
+  local existing
+  for existing in "${skills_dir}"/*(@N); do
+    [[ -e "${existing}" ]] || rm -f "${existing}"
+  done
+
+  local source_dir skill name
+  for source_dir in \
+    "${DOTFILES_DIRECTORY}/claude/skills" \
+    "${DOTFILES_LOCAL_DIRECTORY}/claude/skills"
+  do
+    [[ -d "${source_dir}" ]] || continue
+
+    for skill in "${source_dir}"/*(/N); do
+      name="${skill:t}"
+
+      if [[ -d "${skills_dir}/${name}" && ! -L "${skills_dir}/${name}" ]]; then
+        print_warning "Skill '${name}' exists as a local directory; not linking ${skill}"
+        continue
+      fi
+
+      ln -fsn "${skill}" "${skills_dir}/${name}"
+    done
+  done
+}
+
 function mirror_files {
   ## ensure ssh control path directory exists
   mkdir -p ~/.ssh/control/
@@ -167,9 +204,18 @@ function mirror_files {
   mkdir -p "${HOME}/.claude/hooks"
   link "claude/CLAUDE.md" ".claude/CLAUDE.md"
   link "claude/statusline-command.sh" ".claude/statusline-command.sh"
+  ## Every guard sources guard-lib.sh, so it must be linked too or all four break.
+  link "claude/hooks/guard-lib.sh" ".claude/hooks/guard-lib.sh"
   link "claude/hooks/kubectl-env-guard.sh" ".claude/hooks/kubectl-env-guard.sh"
   link "claude/hooks/terraform-env-guard.sh" ".claude/hooks/terraform-env-guard.sh"
+  link "claude/hooks/openstack-env-guard.sh" ".claude/hooks/openstack-env-guard.sh"
+  link "claude/hooks/argocd-env-guard.sh" ".claude/hooks/argocd-env-guard.sh"
   merge_json "claude/settings.json" ".claude/settings.json"
+  ## User-scope MCP servers live in ~/.claude.json (top-level mcpServers).
+  ## Deep-merge the tracked set in, preserving Claude's own state in that file.
+  ## Secrets are referenced as ${VAR} and exported from ~/.zprofile.local.
+  merge_json "claude/mcp.json" ".claude.json"
+  mirror_skills
 
   ## Do not create a link for the `.zshrc` since it might contain local configuration.
   if [[ ! -e $HOME/.zshrc ]]; then

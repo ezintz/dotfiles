@@ -1,0 +1,8 @@
+#!/bin/sh
+# Test stub: makes context resolution deterministic for guards.bats, so a case
+# that omits --context does not depend on the developer's real kube context.
+if [ "${1:-}" = "config" ] && [ "${2:-}" = "current-context" ]; then
+  printf '%s\n' "${KUBE_TEST_CONTEXT:-wonka-factory}"
+  exit 0
+fi
+exit 0

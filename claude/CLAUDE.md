@@ -5,8 +5,13 @@ Destructive kubectl/helm commands on non-local clusters are gated by a PreToolUs
 see the true target:
 
 - Invoke `kubectl` and `helm` **directly** in the Bash tool — never through wrapper
-  scripts, `eval`, Makefile targets, or tools like helmfile/skaffold/argocd that hide
-  the target cluster from the command text.
+  scripts, Makefile targets, or tools like helmfile/skaffold/ansible that hide the
+  command in a file the hook cannot read. Transparent composition is fine and is
+  classified precisely: `timeout`, `watch`, `nice`, `nohup`, `xargs`, pipes, loops,
+  subshells, `&&`/`;` chains and multi-line scripts.
+- Running kubectl/helm on another machine or in a container (`ssh host "kubectl …"`,
+  `docker run … kubectl …`) always requires confirmation: the local context says
+  nothing about what it will actually hit.
 - Always pass the target **explicitly**: `--context <name>` for kubectl,
   `--kube-context <name>` for helm — even when the current context would already be
   correct. Never rely on whatever context happens to be active.
@@ -17,13 +22,23 @@ see the true target:
   Treat every other context — including unfamiliar ones — as production-class: prefer
   `--dry-run` first, and never attempt to rephrase or restructure a command to avoid
   the confirmation prompt.
+- Read-only inspection is never gated — use it freely: `kubectl get/describe/logs/top/
+  diff/events/explain/auth can-i`, `kubectl rollout status|history`, `kubectl cp
+  pod:/path ./local`, any `--dry-run`, and `helm template/lint/show/get/list/history/
+  status/diff`. If one of these does prompt, that is a guard bug — report it instead
+  of working around it.
+- `kubectl exec` passes only for a strict read-only payload (`cat`, `ls`, `ps`, `df`,
+  `grep`, `find` without `-delete`/`-exec`, …). Shells, interpreters and DB clients
+  always ask, as do readers given an operand that makes them act (`env <cmd>`,
+  `hostname <name>`, `date <time>`). Do not try to phrase a write as a read.
 
 # Terraform / OpenTofu command discipline
 
 Destructive `terraform`/`tofu` commands are gated by a PreToolUse hook
 (`~/.claude/hooks/terraform-env-guard.sh`). Terraform has no local-safe target, so
 **every** state-mutating command (`apply`, `destroy`, `import`, `refresh`, `taint`,
-`state rm|mv|push`, `workspace delete`, `force-unlock`) requires confirmation.
+`state rm|mv|push`, `workspace delete`, `force-unlock`, `init -migrate-state`)
+requires confirmation.
 
 - Invoke `terraform` and `tofu` **directly** in the Bash tool — never through
   `terragrunt`, Makefile targets, wrapper scripts, or `eval`. Wrappers hide the
@@ -34,7 +49,77 @@ Destructive `terraform`/`tofu` commands are gated by a PreToolUse hook
 - One operation per Bash call. Do not chain `workspace select` with a mutating
   command, and do not batch operations across environments/directories.
 - Always run `plan` before `apply`, and inspect it. Read-only commands
-  (`plan`, `validate`, `show`, `output`, `fmt`, `state list|show`) are safe and pass
+  (`plan` incl. `-destroy`, `validate`, `show`, `output`, `fmt`, `graph`, `providers`,
+  `state list|show|pull`, `workspace list|select`, plain `init`) are safe and pass
   through — use them freely to inspect before mutating.
 - Never add `-auto-approve` to dodge the prompt, and never restructure a command to
   avoid the confirmation. Treat every workspace as production-class.
+
+# OpenStack command discipline
+
+Destructive `openstack` CLI commands are gated by a PreToolUse hook
+(`~/.claude/hooks/openstack-env-guard.sh`). OpenStack has no local-safe target
+(every configured cloud is a real environment), so **every** mutating command
+(`create`, `delete`, `set`, `reboot`, `rebuild`, `resize`, `migrate`, `shelve`,
+`suspend`, `stop`, `lock`, `rescue`, `evacuate`, `attach`/`detach`, etc.)
+requires confirmation.
+
+- Invoke `openstack` **directly** in the Bash tool — never through wrapper
+  scripts, Ansible, Heat CLI wrappers, or `eval` that hide the target cloud
+  from the command text.
+- Always pass the target **explicitly**: `--os-cloud <name>` — even when
+  `OS_CLOUD` is already exported. Never rely on whatever cloud happens to be
+  active in the shell.
+- One operation per Bash call. Do not chain cloud selection with a mutating
+  command, and do not batch mutations across clouds/environments.
+- Read-only commands (`list`, `show`, `find`) are safe and pass through — use
+  them freely to inspect before mutating.
+- Never restructure a command to avoid the confirmation prompt. Treat every
+  cloud (staging, quality, production, internal, etc.) as production-class.
+
+# Argo CD command discipline
+
+Destructive `argocd` CLI commands are gated by a PreToolUse hook
+(`~/.claude/hooks/argocd-env-guard.sh`). Argo CD has no local-safe target
+(every Argo CD instance drives real clusters, and `argocd app sync` deploys
+immediately), so **every** state-mutating command (`app sync`, `app delete`,
+`app rollback`, `app set`/`unset`, `app patch`/`patch-resource`/`delete-resource`,
+`app actions run`, `proj`/`repo`/`cluster`/`cert`/`account` create/delete/add/rm/set,
+etc.) requires confirmation.
+
+- Invoke `argocd` **directly** in the Bash tool — never through wrapper scripts,
+  Makefile targets, CI wrappers, or `eval` that hide the target from the command
+  text.
+- Make the target **visible** in the command: pass `--server <host>` (or run in
+  `--core` mode against an explicit kube-context) rather than relying on whatever
+  `argocd context` happens to be current. The hook surfaces the detected
+  server/context/kube-context in its prompt — sanity-check it before approving.
+- One operation per Bash call. Do not chain `argocd context <name>` (or a
+  `--server` switch) with a mutating command, and do not batch mutations across
+  environments.
+- Read-only commands (`app get`/`list`/`history`/`diff`/`manifests`/`logs`,
+  `version`, and `app sync --dry-run`) are safe and pass through — use them
+  freely to inspect before mutating.
+- Never restructure a command to avoid the confirmation prompt. Treat every
+  Argo CD instance and every managed cluster as production-class.
+
+# Guard maintenance
+
+The four guards share `~/.claude/hooks/guard-lib.sh`, which splits the command
+into segments and identifies the *real* subcommand instead of pattern-matching
+verbs anywhere in the string. Behaviour is pinned by `claude/tests/guards.bats`
+in the dotfiles repo (`bats claude/tests/guards.bats`). Any change to a guard —
+especially widening what passes through — must come with a test case in both
+directions: the read-only command that should pass, and the mutation that must
+still ask. Use fictional cluster/release/host names in tests, never real ones.
+
+Adding a guard means touching four places:
+
+1. the hook itself, plus a test case in `claude/tests/guards.bats`
+2. `claude/bootstrap.sh` — both the download list and the settings.json entries
+3. `bin/dotfiles` — a `link` line in `mirror_files`, for the cloned-repo path
+4. a section here
+
+Steps 2 and 3 are separate install paths that do not share code: bootstrap is the
+`curl | sh` route and downloads files, `mirror_files` symlinks them from the
+clone. A guard registered in only one of them silently fails on the other.
