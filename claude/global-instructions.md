@@ -1,3 +1,10 @@
+
+# Git
+
+- **Use three dots, not two, against a base branch.** `git diff main...HEAD`
+  diffs against the merge-base (where this branch actually forked from) —
+  the same thing `gh pr diff` and `glab mr diff` compute.
+
 # Kubernetes / Helm command discipline
 
 Destructive kubectl/helm commands on non-local clusters are gated by a PreToolUse hook

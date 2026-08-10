@@ -227,10 +227,22 @@ function mirror_files {
     link "claude/skills/${skill_name}" ".claude/skills/${skill_name}"
   done
 
+  mkdir -p "${HOME}/.claude/agents"
+  for agent_file in "${DOTFILES_DIRECTORY}"/claude/agents/*.md(N); do
+    local agent_name="$(basename "${agent_file}")"
+    link "claude/agents/${agent_name}" ".claude/agents/${agent_name}"
+  done
+
   mkdir -p "${HOME}/.claude/rules"
   for rule_file in "${DOTFILES_DIRECTORY}"/claude/rules/*.md(N); do
     local rule_name="$(basename "${rule_file}")"
     link "claude/rules/${rule_name}" ".claude/rules/${rule_name}"
+  done
+
+  mkdir -p "${HOME}/.claude/refs"
+  for ref_file in "${DOTFILES_DIRECTORY}"/claude/refs/*.md(N); do
+    local ref_name="$(basename "${ref_file}")"
+    link "claude/refs/${ref_name}" ".claude/refs/${ref_name}"
   done
 
   ## Do not create a link for the `.zshrc` since it might contain local configuration.
