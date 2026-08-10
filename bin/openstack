@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Wrapper for the openstack CLI installed in a dedicated venv (avoids
+# polluting the system/homebrew Python with openstacksdk's dependencies).
+VENV="${OPENSTACK_VENV:-$HOME/.venvs/openstack}"
+exec "$VENV/bin/openstack" "$@"
