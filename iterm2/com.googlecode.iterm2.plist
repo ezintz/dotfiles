@@ -17,9 +17,9 @@
 	<key>AIVectorStore</key>
 	<integer>0</integer>
 	<key>AiMaxTokens</key>
-	<integer>1050000</integer>
+	<integer>400000</integer>
 	<key>AiModel</key>
-	<string>gpt-5.5</string>
+	<string>gpt-5.2</string>
 	<key>AiResponseMaxTokens</key>
 	<integer>128000</integer>
 	<key>AitermURL</key>
@@ -376,6 +376,8 @@
 	</dict>
 	<key>Default Bookmark Guid</key>
 	<string>52B47CC5-E859-4C50-842A-F70828F900D8</string>
+	<key>GenerativeAIAllowed</key>
+	<true/>
 	<key>HapticFeedbackForEsc</key>
 	<false/>
 	<key>HideTabNumber</key>
@@ -384,14 +386,16 @@
 	<true/>
 	<key>IRMemory</key>
 	<integer>4</integer>
-	<key>NeverWarnAboutShortLivedSessions_F5AB2A54-A217-4D2A-9876-B554CF8FE4AF</key>
+	<key>NeverWarnAboutShortLivedSessions_52B47CC5-E859-4C50-842A-F70828F900D8</key>
 	<true/>
-	<key>NeverWarnAboutShortLivedSessions_F5AB2A54-A217-4D2A-9876-B554CF8FE4AF_selection</key>
+	<key>NeverWarnAboutShortLivedSessions_52B47CC5-E859-4C50-842A-F70828F900D8_selection</key>
 	<integer>0</integer>
 	<key>New Bookmarks</key>
 	<array>
 		<dict>
 			<key>ASCII Anti Aliased</key>
+			<true/>
+			<key>ASCII Ligatures</key>
 			<true/>
 			<key>Ambiguous Double Width</key>
 			<false/>
@@ -705,8 +709,6 @@
 			<string>No</string>
 			<key>Custom Directory</key>
 			<string>Recycle</string>
-			<key>Custom Locale</key>
-			<string>en_US.UTF-8</string>
 			<key>Default Bookmark</key>
 			<string>No</string>
 			<key>Description</key>
@@ -1271,8 +1273,6 @@
 			</dict>
 			<key>Send Code When Idle</key>
 			<false/>
-			<key>Set Local Environment Vars</key>
-			<integer>2</integer>
 			<key>Shortcut</key>
 			<string></string>
 			<key>Silence Bell</key>
@@ -1315,8 +1315,8 @@
 	<false/>
 	<key>OpenNoWindowsAtStartup</key>
 	<false/>
-	<key>PasteTabToStringTabStopSize</key>
-	<integer>4</integer>
+	<key>OpenTmuxWindowsIn</key>
+	<integer>0</integer>
 	<key>PointerActions</key>
 	<dict>
 		<key>Button,1,1,,</key>
@@ -1350,8 +1350,6 @@
 			<string>kNextWindowPointerAction</string>
 		</dict>
 	</dict>
-	<key>Print In Black And White</key>
-	<true/>
 	<key>PromptOnQuit</key>
 	<false/>
 	<key>QuitWhenAllWindowsClosed</key>
@@ -1372,5 +1370,9 @@
 	<false/>
 	<key>findMode_iTerm</key>
 	<integer>0</integer>
+	<key>kCPKSelectionViewPreferredModeKey</key>
+	<integer>0</integer>
+	<key>kCPKSelectionViewShowHSBTextFieldsKey</key>
+	<false/>
 </dict>
 </plist>
