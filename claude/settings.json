@@ -30,7 +30,8 @@
   },
   "attribution": {
     "commit": "🤖 Generated with Claude Code",
-    "pr": "🤖 Generated with Claude Code"
+    "pr": "🤖 Generated with Claude Code",
+    "sessionUrl": false
   },
   "includeCoAuthoredBy": false,
   "effortLevel": "medium",
