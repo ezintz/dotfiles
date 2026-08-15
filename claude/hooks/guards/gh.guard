@@ -101,8 +101,8 @@ gh_api_method() {
 # repository gets approved.
 guard_resolve_target() {
   local group="${GUARD_POS[0]:-}" repo arg host
-  repo=$(guard_scm_flag_value '-R|--repo')
-  [ -n "$repo" ] || repo=$(guard_scm_env_value 'GH_REPO')
+  repo=$(guard_flag_value '-R|--repo')
+  [ -n "$repo" ] || repo=$(guard_env_value 'GH_REPO')
   [ -n "$repo" ] || repo="${GH_REPO:-}"
 
   if [ -z "$repo" ]; then
@@ -117,7 +117,7 @@ guard_resolve_target() {
         [ -n "$arg" ] && repo="$arg" ;;
       auth|ssh-key|gpg-key)
         # Account-scoped, not repository-scoped.
-        host=$(guard_scm_flag_value '-h|--hostname')
+        host=$(guard_flag_value '-h|--hostname')
         printf 'account on %s' "${host:-github.com}"
         return 0 ;;
     esac

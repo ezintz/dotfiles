@@ -38,8 +38,8 @@ guard_classify_extra() {
 
 guard_resolve_target() {
   local group="${GUARD_POS[0]:-}" repo host arg
-  repo=$(guard_scm_flag_value '-R|--repo')
-  [ -n "$repo" ] || repo=$(guard_scm_env_value 'GITLAB_REPO')
+  repo=$(guard_flag_value '-R|--repo')
+  [ -n "$repo" ] || repo=$(guard_env_value 'GITLAB_REPO')
   [ -n "$repo" ] || repo="${GITLAB_REPO:-}"
 
   # `glab repo delete ezintz/scratch` names its own target; the origin remote
@@ -50,7 +50,7 @@ guard_resolve_target() {
         arg="${GUARD_POS[2]:-}"
         [ -n "$arg" ] && repo="$arg" ;;
       auth|ssh-key)
-        host=$(guard_scm_flag_value '-h|--hostname')
+        host=$(guard_flag_value '-h|--hostname')
         [ -n "$host" ] || host="${GITLAB_HOST:-gitlab.com}"
         printf 'account on %s' "${host#*://}"
         return 0 ;;
@@ -60,7 +60,7 @@ guard_resolve_target() {
   if [ -n "$repo" ]; then
     # An explicit -R carries the project path but not the instance, so the host
     # has to come from the environment for the prompt to name the right one.
-    host=$(guard_scm_env_value 'GITLAB_HOST')
+    host=$(guard_env_value 'GITLAB_HOST')
     [ -n "$host" ] || host="${GITLAB_HOST:-}"
     host="${host#*://}"
     [ -n "$host" ] && repo="${host%/}/${repo}"

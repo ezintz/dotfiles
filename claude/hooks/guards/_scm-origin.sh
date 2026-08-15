@@ -17,23 +17,3 @@ guard_scm_origin_slug() {
   url="${url%.git}"
   printf '%s' "$url" | tr ':' '/'
 }
-
-# guard_scm_flag_value <flag-alternation> — value of a flag given on the
-# current segment (`-R owner/repo`, `--hostname=example.com`), or nothing.
-guard_scm_flag_value() {
-  printf '%s' "$GUARD_SEG" \
-    | grep -oE -- "(^|[[:space:]])($1)[= ][^[:space:]]+" \
-    | head -n1 \
-    | sed -E "s/.*($1)[= ]//" \
-    | tr -d '"'"'"''
-}
-
-# guard_scm_env_value <var-name> — value of `VAR=…` prefixed onto the current
-# segment, or nothing. An inherited value is the caller's job to fall back to.
-guard_scm_env_value() {
-  printf '%s' "$GUARD_SEG" \
-    | grep -oE "(^|[;&|[:space:]])$1=[^[:space:]]+" \
-    | head -n1 \
-    | sed -E "s/.*$1=//" \
-    | tr -d '"'"'"''
-}

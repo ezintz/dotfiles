@@ -433,3 +433,23 @@ guard_is_remote_wrapper() {
   [ -n "$GUARD_HEAD" ] || return 1
   [[ "$GUARD_HEAD" =~ ^($GUARD_REMOTE_HEADS)$ ]]
 }
+
+# guard_flag_value <flag-alternation> — value of a flag given on the
+# current segment (`-R owner/repo`, `--hostname=example.com`), or nothing.
+guard_flag_value() {
+  printf '%s' "$GUARD_SEG" \
+    | grep -oE -- "(^|[[:space:]])($1)[= ][^[:space:]]+" \
+    | head -n1 \
+    | sed -E "s/.*($1)[= ]//" \
+    | tr -d '"'"'"''
+}
+
+# guard_env_value <var-name> — value of `VAR=…` prefixed onto the current
+# segment, or nothing. An inherited value is the caller's job to fall back to.
+guard_env_value() {
+  printf '%s' "$GUARD_SEG" \
+    | grep -oE "(^|[;&|[:space:]])$1=[^[:space:]]+" \
+    | head -n1 \
+    | sed -E "s/.*$1=//" \
+    | tr -d '"'"'"''
+}
