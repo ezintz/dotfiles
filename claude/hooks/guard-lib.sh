@@ -69,8 +69,13 @@ guard_ask() {
 # Split a command line into rough simple-command segments, one per line.
 # Over-splitting is harmless: a fragment that no longer starts with the binary
 # is simply not treated as an invocation of it.
+# The trailing newline matters: callers invoke this in a loop (one script body
+# or one make recipe at a time) and append the results. Without it the last
+# command of one body and the first of the next merge into a single line, and
+# `bash a.sh && bash b.sh` ends up classifying `…/srv/appkubectl --context
+# production delete …` — one token that matches no guard, so neither prompts.
 guard_segments() {
-  printf '%s' "$1" | tr $';|&(){}`\n' $'\n\n\n\n\n\n\n\n'
+  printf '%s\n' "$1" | tr $';|&(){}`\n' $'\n\n\n\n\n\n\n\n'
 }
 
 # guard_strip_heredocs <command> — the command with every heredoc *body*
@@ -175,6 +180,103 @@ guard_script_bodies() {
   done <<EOF
 $1
 EOF
+}
+
+# guard_make_recipes <segments> — the segments of the recipe behind every
+# `make <target>` the command runs.
+#
+# Same principle as guard_script_bodies: a Makefile target is a file full of
+# commands, and running it is running them. Without this, `make deploy` is
+# opaque and the only options are prompting on the name — which says nothing
+# about what the target does — or missing a production `helm upgrade` entirely.
+# With it, `make test` that tears down a namespace is caught and `make deploy`
+# that only rsyncs is not.
+#
+# Bounded to 4 targets, one level deep, and no variable expansion: a recipe of
+# `$(KUBECTL) delete …` is not classified, which is what the `make` entries in
+# settings.json `permissions.ask` remain the backstop for.
+guard_make_recipes() {
+  local seg file target n=0 i tn found
+  while IFS= read -r seg; do
+    [ -n "$seg" ] || continue
+    # Cheap pre-filter first: tokenizing every segment of every command to look
+    # for a word that is almost never there is not worth the cycles.
+    case "$seg" in *make*) ;; *) continue ;; esac
+
+    guard_tokenize "$seg"
+    tn=${#GUARD_TOKENS[@]}
+    i=0
+    while [ $i -lt $tn ]; do
+      case "${GUARD_TOKENS[$i]}" in
+        [A-Za-z_]*=*)                        i=$((i + 1)); continue ;;
+        sudo|env|nohup|time|exec|stdbuf|doas) i=$((i + 1)); continue ;;
+      esac
+      break
+    done
+    [ $i -lt $tn ] || continue
+    [ "${GUARD_TOKENS[$i]##*/}" = 'make' ] || continue
+
+    # -f/--file/--makefile wins; otherwise the names make itself looks for.
+    file=''
+    found=$i
+    i=$((i + 1))
+    while [ $i -lt $tn ]; do
+      case "${GUARD_TOKENS[$i]}" in
+        -f|--file|--makefile)
+          file="${GUARD_TOKENS[$((i + 1))]-}"; i=$((i + 2)); continue ;;
+        --file=*|--makefile=*) file="${GUARD_TOKENS[$i]#*=}"; i=$((i + 1)); continue ;;
+      esac
+      i=$((i + 1))
+    done
+    if [ -z "$file" ]; then
+      for target in GNUmakefile makefile Makefile; do
+        [ -f "$target" ] && file="$target"
+      done
+    fi
+    [ -n "$file" ] && [ -f "$file" ] && [ -r "$file" ] || continue
+
+    # Everything after `make` that is not a flag, a flag value or a command-line
+    # variable assignment is a goal.
+    i=$((found + 1))
+    while [ $i -lt $tn ]; do
+      target="${GUARD_TOKENS[$i]}"
+      case "$target" in
+        -f|--file|--makefile) i=$((i + 2)); continue ;;
+        -*|*=*)               i=$((i + 1)); continue ;;
+      esac
+      i=$((i + 1))
+      n=$((n + 1))
+      [ $n -gt 4 ] && break 2
+      guard_segments "$(guard_make_recipe_of "$file" "$target")"
+    done
+  done <<EOF
+$1
+EOF
+}
+
+# guard_make_recipe_of <makefile> <target> — the recipe lines of one target.
+# Recipe lines are the tab-indented block after `target:`; `@`, `-` and `+`
+# prefixes are stripped because they change how make reports the command, not
+# what runs. A `VAR := value` line is not a target, hence the `=` check.
+guard_make_recipe_of() {
+  awk -v t="$2" '
+    !inrecipe {
+      p = index($0, ":")
+      if (p > 1) {
+        head = substr($0, 1, p - 1)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", head)
+        if (head == t && substr($0, p + 1, 1) != "=") inrecipe = 1
+      }
+      next
+    }
+    substr($0, 1, 1) == "\t" {
+      line = substr($0, 2)
+      sub(/^[@+-]+/, "", line)
+      print line
+      next
+    }
+    NF { inrecipe = 0 }
+  ' "$1" 2>/dev/null
 }
 
 # GUARD_TOKENS[] = the segment's words, surrounding quotes stripped.

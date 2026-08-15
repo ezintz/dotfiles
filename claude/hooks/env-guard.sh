@@ -48,7 +48,8 @@ esac
 # executes, so `bash deploy.sh` is judged on what deploy.sh actually does.
 GUARD_ALL_SEGMENTS=$(guard_segments "$GUARD_CMD")
 GUARD_ALL_SEGMENTS="$GUARD_ALL_SEGMENTS
-$(guard_script_bodies "$GUARD_ALL_SEGMENTS")"
+$(guard_script_bodies "$GUARD_ALL_SEGMENTS")
+$(guard_make_recipes "$GUARD_ALL_SEGMENTS")"
 
 # guard-lib turns globbing off (untrusted word-splitting); turn it back on just
 # long enough to enumerate the profiles.

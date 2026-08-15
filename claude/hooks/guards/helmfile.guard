@@ -1,0 +1,57 @@
+# helmfile — force confirmation for the commands that push releases to a
+# cluster, and name the environment they push to.
+#
+# helmfile is why the "invoke the binary directly" rule existed: it runs helm
+# out of a state file, so the helm profile never sees `helm upgrade` and never
+# fires. Guarding helmfile itself closes that hole, and does it better than the
+# blanket permission rule it replaces — `diff`, `template`, `lint` and `list`
+# are the normal inspection loop and must not prompt.
+#
+# Global flags come *before* the subcommand (`helmfile -e production sync`), so
+# every value-taking flag has to be in GUARD_VALFLAGS or `production` reads as
+# the subcommand.
+#
+# The environment is the thing worth reading at the prompt. The kube context
+# usually is not written on the command line at all — helmfile.yaml names it per
+# release — so a local *current* context is no evidence the run is local, and
+# only an explicit --kube-context can make a run safe.
+
+. "$GUARD_DIR/guards/_kube-context.sh"
+
+GUARD_BINS='helmfile'
+GUARD_STYLE='vocab'
+
+# The full command list as of helmfile v1, reads and writes alike, so an exact
+# token match finds the real subcommand.
+GUARD_VOCAB='apply|build|create|cache|charts|completion|delete|deps|destroy|diff|fetch|help|init|lint|list|repos|show-dag|status|sync|template|test|unittest|version|write-values'
+
+# `charts` and `delete` are the deprecated spellings of sync and destroy — still
+# accepted, still deploy and still delete. `test` runs helm test hooks as real
+# pods in the cluster.
+GUARD_DESTRUCTIVE='apply|sync|charts|destroy|delete|test'
+
+GUARD_VALFLAGS='-f|--file|-e|--environment|-n|--namespace|-l|--selector|--kube-context|--kubeconfig|-c|--chart|--log-level|--state-values-set|--state-values-file|--set|--set-string|--values|--args|--concurrency|--timeout|-o|--output|--suppress'
+
+# Only an explicit context can be recognised as local; see the header.
+GUARD_SAFE_TARGET="$GUARD_KUBE_LOCAL_CONTEXTS"
+
+guard_resolve_target() {
+  local ctx
+  if guard_is_remote_wrapper; then
+    printf '(remote via %s)' "$GUARD_HEAD"; return 0
+  fi
+  ctx=$(guard_flag_value '--kube-context')
+  if [ -n "$ctx" ]; then
+    printf '%s' "$ctx"
+  else
+    printf '(context named in the state file)'
+  fi
+}
+
+guard_reason() {
+  local env
+  env=$(guard_flag_value '-e|--environment')
+  [ -n "$env" ] || env='default'
+  printf 'helmfile %s deploys environment "%s" to context %s. %s' \
+    "$GUARD_ACTION" "$env" "${1:-unknown}" "$GUARD_REASON_TAIL"
+}

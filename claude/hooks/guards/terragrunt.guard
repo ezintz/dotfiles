@@ -1,0 +1,87 @@
+# terragrunt — the same state-mutating verbs the terraform profile gates, plus
+# the wrapper's own fan-out commands.
+#
+# terragrunt runs terraform/tofu from its own config, so the terraform profile
+# never sees the invocation. The verbs are inherited, but one thing has no
+# terraform equivalent and is the reason this profile earns its keep: `run --all`
+# (and the legacy `run-all`, `apply-all`, `destroy-all`) applies to *every unit*
+# under the working directory at once. A single approval there is worth far more
+# than the same verb on one module, so the prompt says which form it is.
+#
+# Deprecated and removed spellings are kept in the vocabulary on purpose: a
+# command that no longer works is harmless, but one that still works and is not
+# recognised classifies as read-only and never prompts.
+
+GUARD_BINS='terragrunt'
+GUARD_STYLE='vocab'
+
+GUARD_VOCAB='run|run-all|exec|stack|apply|destroy|plan|init|output|validate|show|refresh|import|taint|untaint|state|workspace|force-unlock|console|providers|graph|fmt|test|version|catalog|scaffold|find|list|dag|info|backend|hcl|hclfmt|hclvalidate|render|render-json|terragrunt-info|validate-inputs|graph-dependencies|output-module-groups|aws-provider-patch|apply-all|destroy-all|plan-all|output-all|validate-all'
+
+# The single-unit verbs, matching terraform.guard. Fan-out and `run` are handled
+# in guard_classify_extra because what they do depends on the word after them.
+GUARD_DESTRUCTIVE='apply|destroy|import|taint|untaint|refresh|force-unlock|apply-all|destroy-all'
+
+GUARD_VALFLAGS='--working-dir|--terragrunt-working-dir|--config|--terragrunt-config|--download-dir|--terragrunt-download-dir|--iam-role|--terragrunt-iam-role|--parallelism|--terragrunt-parallelism|--units-that-include|--queue-include-dir|--queue-exclude-dir|--log-level|--terragrunt-log-level|--var|--var-file|-var|-var-file|--out|--state|--target|--tf-path|--terragrunt-tfpath'
+
+# Terraform verbs that change real infrastructure when reached through `run`.
+TERRAGRUNT_MUTATING='apply|destroy|import|taint|untaint|refresh|force-unlock'
+
+guard_classify_extra() {
+  local a1
+
+  case "$GUARD_SUB" in
+    run|run-all|exec|stack)
+      # `terragrunt run --all apply` / `terragrunt run-all apply` / the v0.78+
+      # `terragrunt stack run apply`. guard_arg_at skips flag values, so --all
+      # and --working-dir <dir> do not read as the terraform command.
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      [ "$a1" = 'run' ] && a1=$(guard_arg_at 2 "$GUARD_VALFLAGS")   # stack run apply
+      if [[ "$a1" =~ ^($TERRAGRUNT_MUTATING)$ ]]; then
+        if [ "$GUARD_SUB" = 'run-all' ] || guard_has_token '--all'; then
+          GUARD_ACTION="$GUARD_SUB --all $a1 (every unit under the working directory)"
+        else
+          GUARD_ACTION="$GUARD_SUB $a1"
+        fi
+        return 0
+      fi
+      return 1 ;;
+    state)
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      case "$a1" in
+        rm|mv|push|replace-provider) GUARD_ACTION="state $a1"; return 0 ;;
+        *) return 1 ;;
+      esac ;;
+    workspace)
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      case "$a1" in
+        delete) GUARD_ACTION='workspace delete'; return 0 ;;
+        *) return 1 ;;
+      esac ;;
+    init)
+      if guard_has_token '-migrate-state|-force-copy|--migrate-state|--force-copy'; then
+        GUARD_ACTION='init (backend migration)'; return 0
+      fi
+      return 1 ;;
+  esac
+  return 2
+}
+
+guard_resolve_target() {
+  local dir ws
+  dir=$(guard_flag_value '--working-dir|--terragrunt-working-dir')
+  [ -n "$dir" ] || dir="$PWD"
+
+  ws=$(guard_env_value 'TF_WORKSPACE')
+  [ -n "$ws" ] || ws="${TF_WORKSPACE:-}"
+
+  if [ -n "$ws" ]; then
+    printf 'workspace=%s, dir=%s' "$ws" "$dir"
+  else
+    printf 'dir=%s' "$dir"
+  fi
+}
+
+guard_reason() {
+  printf 'Destructive terragrunt "%s" targets %s. %s' \
+    "$GUARD_ACTION" "${1:-unknown}" "$GUARD_REASON_TAIL"
+}

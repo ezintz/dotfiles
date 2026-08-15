@@ -694,3 +694,277 @@ helm template test chart'
   assert_ask 'glab repo delete noodleshop/scratch'
   assert_reason 'glab repo delete noodleshop/scratch' 'noodleshop/scratch'
 }
+
+# =============================================================================
+# ansible — the playbook is invisible, the inventory is not
+# =============================================================================
+
+@test "ansible: check mode, syntax checks and listings pass" {
+  assert_pass 'ansible-playbook --check site.yml -i inventories/production'
+  assert_pass 'ansible-playbook --syntax-check site.yml'
+  assert_pass 'ansible-playbook --list-tasks site.yml'
+  assert_pass 'ansible-playbook --list-hosts -i inventories/production site.yml'
+}
+
+@test "ansible: read-only modules pass, and the unguarded ansible-* tools do too" {
+  assert_pass 'ansible all -m ping -i hosts'
+  assert_pass 'ansible webservers -m setup -i inventories/staging'
+  assert_pass 'ansible-doc -l'
+  assert_pass 'ansible-galaxy install -r requirements.yml'
+  assert_pass 'ansible-inventory --list -i inventories/production'
+  assert_pass 'ansible-lint site.yml'
+}
+
+@test "ansible: playbook runs and writing modules ask" {
+  assert_ask 'ansible-playbook site.yml -i inventories/production'
+  assert_ask 'ansible webservers -m shell -a "systemctl restart nginx"'
+  assert_ask 'ansible all -m copy -a "src=/tmp/x dest=/etc/x" -i hosts'
+}
+
+@test "ansible: an omitted -m is the command module, not a read" {
+  # ansible defaults to the `command` module, which runs an arbitrary command on
+  # every matched host. Treating a missing flag as read-only would undo the guard.
+  assert_ask 'ansible all -a "uptime" -i inventories/production'
+}
+
+@test "ansible: the prompt names the inventory and the limit, not just the play" {
+  assert_reason 'ansible-playbook site.yml -i inventories/production' 'inventories/production'
+  assert_reason 'ansible-playbook deploy.yml -i inventories/staging --limit db' 'db'
+  assert_reason 'ansible webservers -m shell -a "id" -i hosts' 'webservers'
+}
+
+# =============================================================================
+# helmfile / terragrunt / skaffold — the wrappers the other profiles cannot see
+# =============================================================================
+
+@test "helmfile: the inspection loop passes" {
+  assert_pass 'helmfile -e production diff'
+  assert_pass 'helmfile -e production template'
+  assert_pass 'helmfile lint'
+  assert_pass 'helmfile list'
+  assert_pass 'helmfile build'
+  assert_pass 'helmfile write-values -e staging'
+}
+
+@test "helmfile: an environment name is not a subcommand" {
+  # Global flags come before the verb, so `-e production diff` must read as
+  # diff — not as a release named production.
+  assert_pass 'helmfile -e sync diff'
+  assert_pass 'helmfile --environment destroy template'
+}
+
+@test "helmfile: deploying and destroying ask" {
+  assert_ask 'helmfile -e production sync'
+  assert_ask 'helmfile apply'
+  assert_ask 'helmfile -e staging destroy'
+  assert_ask 'helmfile charts'
+}
+
+@test "helmfile: an explicit local context passes, an implicit one does not" {
+  assert_pass 'helmfile --kube-context orbstack apply'
+  # helmfile.yaml names the context per release, so no flag means unknown.
+  assert_ask 'helmfile apply'
+}
+
+@test "helmfile: the prompt names the environment it deploys" {
+  assert_reason 'helmfile -e production apply' 'production'
+}
+
+@test "terragrunt: reads and formatting pass" {
+  assert_pass 'terragrunt plan'
+  assert_pass 'terragrunt run plan'
+  assert_pass 'terragrunt output'
+  assert_pass 'terragrunt validate'
+  assert_pass 'terragrunt state list'
+  assert_pass 'terragrunt init'
+  assert_pass 'terragrunt hcl fmt'
+}
+
+@test "terragrunt: single-unit mutations ask" {
+  assert_ask 'terragrunt apply'
+  assert_ask 'terragrunt destroy'
+  assert_ask 'terragrunt state rm aws_instance.wonka'
+  assert_ask 'terragrunt init -migrate-state'
+}
+
+@test "terragrunt: fan-out across every unit asks and says so" {
+  assert_ask 'terragrunt run --all apply'
+  assert_ask 'terragrunt run-all destroy'
+  assert_ask 'terragrunt run --all apply --working-dir infra/production'
+  assert_reason 'terragrunt run --all apply --working-dir infra/production' 'every unit'
+  assert_reason 'terragrunt run --all apply --working-dir infra/production' 'infra/production'
+}
+
+@test "skaffold: rendering and inspection pass" {
+  assert_pass 'skaffold render'
+  assert_pass 'skaffold diagnose'
+  assert_pass 'skaffold inspect build-env list'
+  assert_pass 'skaffold version'
+  assert_pass 'skaffold delete --dry-run'
+}
+
+@test "skaffold: deploying asks, and dev/debug ask because they keep deploying" {
+  assert_ask 'skaffold deploy --kube-context gke_wonka_prod'
+  assert_ask 'skaffold dev'
+  assert_ask 'skaffold debug'
+  assert_ask 'skaffold run'
+  assert_ask 'skaffold delete'
+  assert_ask 'skaffold apply rendered-pod.yaml'
+}
+
+@test "skaffold: a local build passes, publishing the image does not" {
+  assert_pass 'skaffold build'
+  assert_pass 'skaffold build --push=false'
+  assert_ask 'skaffold build --push'
+}
+
+@test "skaffold: an explicit local context passes" {
+  assert_pass 'skaffold dev --kube-context orbstack'
+  assert_reason 'skaffold deploy --kube-context gke_wonka_prod -n payments' 'payments'
+}
+
+# =============================================================================
+# make — classified by the recipe, not by the target name
+# =============================================================================
+
+make_fixture() {
+  cd "$BATS_TEST_TMPDIR" || return 1
+  cat > Makefile <<'MAKEFILE'
+.PHONY: deploy smoke wipe
+KUBECTL := kubectl --context wonka-factory
+
+deploy: build
+	rsync -a dist/ web@example.com:/srv/app/
+	@echo done
+
+smoke:
+	@kubectl --context wonka-factory delete namespace scratch
+
+wipe:
+	$(KUBECTL) delete namespace everything
+MAKEFILE
+}
+
+@test "make: a harmless target passes despite a dangerous-sounding name" {
+  make_fixture
+  assert_pass 'make deploy'
+}
+
+@test "make: a dangerous target asks despite a harmless-sounding name" {
+  make_fixture
+  assert_ask 'make smoke'
+  assert_reason 'make smoke' 'wonka-factory'
+}
+
+@test "make: variables in a recipe are a known blind spot" {
+  # No expansion, so `$(KUBECTL) delete` is not classified. Pinned deliberately:
+  # this is what the `make` entries in settings.json permissions.ask back up, and
+  # if it ever changes the change should be a decision, not a surprise.
+  make_fixture
+  assert_pass 'make wipe'
+}
+
+@test "make: -f picks the makefile, and each goal is expanded" {
+  make_fixture
+  command mv Makefile build.mk
+  assert_pass 'make -f build.mk deploy'
+  assert_ask 'make -f build.mk deploy smoke'
+}
+
+@test "scripts: two scripts in one command do not bleed into each other" {
+  # Regression: guard_segments emitted no trailing newline, so the last line of
+  # one script body and the first of the next merged into a single segment.
+  # Targets are resolved per segment, so the merged segment answered with the
+  # *first* context it found — the local one — and the delete against a real
+  # cluster passed silently. The concatenation alone is not enough to show this:
+  # a glued segment is still caught by embedded-invocation detection. It is the
+  # target resolution that goes wrong, so that is what this pins.
+  cd "$BATS_TEST_TMPDIR" || return 1
+  printf 'kubectl --context orbstack get pods\n' > a.sh
+  printf 'kubectl --context wonka-factory delete namespace scratch\n' > b.sh
+  assert_ask 'bash a.sh && bash b.sh'
+  assert_reason 'bash a.sh && bash b.sh' 'wonka-factory'
+}
+
+@test "make: a command-line variable is not a goal" {
+  make_fixture
+  assert_ask 'make smoke ENV=production'
+}
+
+# =============================================================================
+# Vocabulary drift — the failure mode the cases above cannot reach
+# =============================================================================
+#
+# A vocab-style guard identifies the subcommand by exact match against
+# GUARD_VOCAB. A verb the tool ships but the guard has never heard of matches
+# nothing, so the segment is skipped and treated as read-only: no prompt, no
+# error, no trace. You cannot write a behaviour case for a verb you do not know
+# exists, so instead ask the tool itself what verbs it has and require the
+# guard to have an opinion on every one — destructive, or deliberately not.
+#
+# Only meaningful where the vocabulary has to be exhaustive. `git` does not
+# qualify: `push` is its only destructive verb, so a missing entry there can
+# produce a spurious prompt but never a silent pass.
+
+guard_vocab_of() { # <guard-file>
+  sed -n "s/^GUARD_VOCAB='\(.*\)'\$/\1/p" "$1"
+}
+
+assert_vocab_covers() { # <binary> <guard-file> <verb>...
+  local bin="$1" guard="$2"
+  shift 2
+  local vocab missing='' v
+
+  vocab=$(guard_vocab_of "$guard")
+  if [ -z "$vocab" ]; then
+    echo "no GUARD_VOCAB found in $guard"
+    return 1
+  fi
+
+  # If the help output ever changes shape the scrape returns nothing and this
+  # test passes while checking nothing — the same silent pass it exists to
+  # catch. Require a plausible haul instead.
+  if [ "$#" -lt 10 ]; then
+    echo "only $# verbs scraped from '$bin --help' — the parser is stale,"
+    echo "so this check is no longer checking anything. Fix the scrape."
+    return 1
+  fi
+
+  for v in "$@"; do
+    [[ "|$vocab|" == *"|$v|"* ]] || missing="$missing $v"
+  done
+
+  if [ -n "$missing" ]; then
+    echo "$bin ships verbs GUARD_VOCAB does not know. They match nothing, so"
+    echo "they classify as read-only and will never prompt. Triage each and"
+    echo "add it to $(basename "$guard") — to GUARD_VOCAB alone if it is a read,"
+    echo "to GUARD_DESTRUCTIVE as well if it mutates:"
+    echo " ->$missing"
+    return 1
+  fi
+}
+
+@test "vocab drift: kubectl ships no verb the guard has never heard of" {
+  command -v kubectl >/dev/null 2>&1 || skip "kubectl not installed"
+  assert_vocab_covers kubectl \
+    "${BATS_TEST_DIRNAME}/../hooks/guards/kubectl.guard" \
+    $(kubectl --help 2>/dev/null | awk '/^  [a-z][a-z-]+ +[A-Z]/{print $1}' | sort -u)
+}
+
+@test "vocab drift: helm ships no verb the guard has never heard of" {
+  command -v helm >/dev/null 2>&1 || skip "helm not installed"
+  assert_vocab_covers helm \
+    "${BATS_TEST_DIRNAME}/../hooks/guards/helm.guard" \
+    $(helm --help 2>/dev/null |
+        awk '/^Available Commands:/{f=1;next} /^Flags:/{f=0} f && /^  [a-z]/{print $1}' |
+        sort -u)
+}
+
+@test "vocab drift: terraform/tofu ships no verb the guard has never heard of" {
+  local bin
+  for bin in terraform tofu; do command -v "$bin" >/dev/null 2>&1 && break; done
+  command -v "$bin" >/dev/null 2>&1 || skip "neither terraform nor tofu installed"
+  assert_vocab_covers "$bin" \
+    "${BATS_TEST_DIRNAME}/../hooks/guards/terraform.guard" \
+    $("$bin" --help 2>/dev/null | awk '/^  [a-z][a-z-]+ +[A-Z]/{print $1}' | sort -u)
+}

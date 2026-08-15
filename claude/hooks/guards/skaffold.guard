@@ -1,0 +1,69 @@
+# skaffold — force confirmation for the commands that put something on a
+# cluster or take it off again.
+#
+# Like helmfile, skaffold deploys out of its own config, so the kubectl and helm
+# profiles never see the underlying commands. `dev` and `debug` are the ones
+# worth being careful about: they are not one-shot, they deploy and keep
+# redeploying on every file change, so approving one approves a stream.
+#
+# The inspection half — render, diagnose, inspect, filter, version — is the
+# normal loop and passes. `build` is inert while it stays local; with --push it
+# publishes an image to a shared registry, which is why it is classified on the
+# flag rather than on the verb.
+#
+# As with helmfile, skaffold.yaml can name the kube context itself, so only an
+# explicit --kube-context (which the docs say overrides the file) is evidence
+# that a run is local.
+
+. "$GUARD_DIR/guards/_kube-context.sh"
+
+GUARD_BINS='skaffold'
+GUARD_STYLE='vocab'
+
+GUARD_VOCAB='apply|build|completion|config|credits|debug|delete|deploy|dev|diagnose|filter|fix|generate-pipeline|init|inspect|lsp|render|run|survey|test|verify|version'
+
+# dev/debug deploy continuously; run builds and deploys; verify runs its test
+# containers against the deployed application.
+GUARD_DESTRUCTIVE='apply|delete|deploy|dev|debug|run|verify'
+
+# Exact values only. `--dry-run=false` must not read as a dry run.
+GUARD_DRYRUN='--dry-run|--dry-run=true'
+
+GUARD_VALFLAGS='-f|--filename|-n|--namespace|-p|--profile|--kube-context|--kubeconfig|-m|--module|--images|--build-artifacts|--default-repo|--platform|-o|--output|--tag|--label|--port-forward-timeout|--status-check-deadline'
+
+GUARD_SAFE_TARGET="$GUARD_KUBE_LOCAL_CONTEXTS"
+
+guard_classify_extra() {
+  case "$GUARD_SUB" in
+    build)
+      # Exact tokens, so `--push=false` stays a local build.
+      if guard_has_token '--push|--push=true'; then
+        GUARD_ACTION='build --push'; return 0
+      fi
+      return 1 ;;
+  esac
+  return 2
+}
+
+guard_resolve_target() {
+  local ctx
+  if guard_is_remote_wrapper; then
+    printf '(remote via %s)' "$GUARD_HEAD"; return 0
+  fi
+  ctx=$(guard_flag_value '--kube-context')
+  if [ -n "$ctx" ]; then
+    printf '%s' "$ctx"
+  else
+    printf '(context named in skaffold.yaml)'
+  fi
+}
+
+guard_reason() {
+  local ns profile
+  ns=$(guard_flag_value '-n|--namespace')
+  profile=$(guard_flag_value '-p|--profile')
+  printf 'skaffold %s targets context %s' "$GUARD_ACTION" "${1:-unknown}"
+  [ -n "$ns" ] && printf ', namespace %s' "$ns"
+  [ -n "$profile" ] && printf ', profile %s' "$profile"
+  printf '. %s' "$GUARD_REASON_TAIL"
+}

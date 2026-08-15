@@ -1,0 +1,96 @@
+# ansible / ansible-playbook — force confirmation for anything that runs
+# against real hosts, and name the inventory it runs against.
+#
+# What the guard can and cannot see is unusually lopsided here, so be precise
+# about it. A playbook's *contents* are invisible: the hook has no idea whether
+# site.yml restarts a service or tears down a cluster, and it never will. What
+# it can read is the part that decides how much a mistake costs — which
+# inventory, which host pattern — and that is what the prompt shows.
+#
+# So the classification is coarse on purpose: a playbook run asks, an ad-hoc
+# module asks unless the module only reads. That is still far better than the
+# blanket `permissions.ask` rule this replaces, which prompted on `--check`,
+# `--syntax-check` and `--list-tasks` too, and a guard that prompts on routine
+# work gets approved reflexively.
+#
+# The other ansible binaries are deliberately not guarded: `ansible-doc`,
+# `ansible-config`, `ansible-inventory`, `ansible-lint` and `ansible-vault` do
+# not touch a remote host, and `ansible-galaxy` only writes to local disk.
+#
+# There is no local-safe target. `--connection local` and an inventory of
+# `localhost,` still install packages and edit files on this machine, so they
+# are not waved through; set GUARD_SAFE_TARGET to allowlist a sandbox
+# inventory, e.g. GUARD_SAFE_TARGET='inventory vagrant'.
+
+GUARD_BINS='ansible ansible-playbook'
+GUARD_STYLE='positional'
+
+# Check mode is ansible's own dry run. Exact values only — it takes no `=arg`
+# form, so there is no `--check=false` to leak through.
+GUARD_DRYRUN='--check|-C'
+
+# Every boolean flag has to be listed, or guard_positionals treats the next word
+# as its value and eats it: without `--check` here, `ansible-playbook --check
+# site.yml` loses site.yml and the prompt cannot name the playbook.
+GUARD_BOOLS='-C|--check|-D|--diff|-b|--become|-K|--ask-become-pass|-k|--ask-pass|--ask-vault-pass|--ask-vault-password|--list-hosts|--list-tasks|--list-tags|--syntax-check|--flush-cache|--force-handlers|--step|-o|--one-line|-v+|--verbose|--version|-h|--help'
+
+# Modules that only report. Narrow on purpose: `uri` is left out because
+# `method=DELETE` turns it into a write, and `command`/`shell`/`raw`/`script`
+# run whatever they are given. `fetch` is a read on the remote — it copies the
+# other way.
+ANSIBLE_READ_MODULES='ping|setup|gather_facts|debug|slurp|stat|find|assert|wait_for|fetch'
+
+guard_classify_extra() {
+  local mod
+
+  # Enumerating and syntax-checking never reach a host.
+  if guard_has_flag '--list-hosts|--list-tasks|--list-tags|--syntax-check|--version'; then
+    return 1
+  fi
+
+  case "$GUARD_BIN" in
+    ansible-playbook)
+      GUARD_ACTION="${GUARD_POS[0]-playbook}"
+      return 0 ;;
+    ansible)
+      # No -m means the `command` module, which runs an arbitrary command on
+      # every matched host. Defaulting to "read" here would be the whole guard
+      # undone by an omitted flag.
+      mod=$(guard_flag_value '-m|--module-name')
+      [ -n "$mod" ] || mod='command'
+      [[ "$mod" =~ ^($ANSIBLE_READ_MODULES)$ ]] && return 1
+      GUARD_ACTION="-m $mod"
+      return 0 ;;
+  esac
+  return 1
+}
+
+# The inventory is the blast radius, so it is resolved from what the command
+# names before falling back to ambient state — a prompt that says "production"
+# when the run targets staging is worse than no prompt at all.
+guard_resolve_target() {
+  local inv hosts limit
+
+  inv=$(guard_flag_value '-i|--inventory|--inventory-file')
+  [ -n "$inv" ] || inv=$(guard_env_value 'ANSIBLE_INVENTORY')
+  [ -n "$inv" ] || inv="${ANSIBLE_INVENTORY:-}"
+  [ -n "$inv" ] || inv='default inventory'
+
+  # --limit narrows whatever the play targets, so it is the honest answer when
+  # both are present. Otherwise ansible's first positional is the host pattern;
+  # ansible-playbook's is the playbook, which says nothing about hosts.
+  limit=$(guard_flag_value '-l|--limit')
+  if [ -n "$limit" ]; then
+    hosts="$limit"
+  elif [ "$GUARD_BIN" = 'ansible' ]; then
+    hosts="${GUARD_POS[0]-}"
+  fi
+  [ -n "$hosts" ] || hosts='every host in the inventory'
+
+  printf 'hosts %s, inventory %s' "$hosts" "$inv"
+}
+
+guard_reason() {
+  printf '%s %s runs against %s. Its tasks are not visible to the guard. %s' \
+    "$GUARD_BIN" "$GUARD_ACTION" "$1" "$GUARD_REASON_TAIL"
+}

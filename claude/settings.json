@@ -1,6 +1,13 @@
 {
   "permissions": {
-    "defaultMode": "auto"
+    "defaultMode": "auto",
+    "ask": [
+      "Bash(make deploy*)",
+      "Bash(make apply*)",
+      "Bash(make destroy*)",
+      "Bash(make release*)",
+      "Bash(make publish*)"
+    ]
   },
   "extraKnownMarketplaces": {
     "claude-plugins-official": {
@@ -44,8 +51,8 @@
     "command": "sh ~/.claude/statusline-command.sh"
   },
   "attribution": {
-    "commit": "Co-authored by Claude Code 🤖",
-    "pr": "Co-authored by Claude Code 🤖",
+    "commit": "Co-authored by Claude Code \ud83e\udd16",
+    "pr": "Co-authored by Claude Code \ud83e\udd16",
     "sessionUrl": false
   },
   "includeCoAuthoredBy": false,

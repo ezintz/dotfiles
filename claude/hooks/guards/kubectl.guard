@@ -13,7 +13,7 @@ GUARD_STYLE='vocab'
 
 # Every subcommand kubectl knows, both classes. The first exact token match
 # wins, so a read-only subcommand shields the words after it.
-GUARD_VOCAB='get|describe|logs|top|explain|api-resources|api-versions|version|help|cluster-info|config|auth|diff|events|wait|port-forward|proxy|completion|options|plugin|kustomize|alpha|convert|delete|apply|create|patch|edit|replace|scale|autoscale|expose|run|set|rollout|drain|cordon|uncordon|taint|label|annotate|cp|exec|attach|debug|certificate|evict'
+GUARD_VOCAB='get|describe|logs|top|explain|api-resources|api-versions|version|help|cluster-info|config|kuberc|auth|diff|events|wait|port-forward|proxy|completion|options|plugin|kustomize|alpha|convert|delete|apply|create|patch|edit|replace|scale|autoscale|expose|run|set|rollout|drain|cordon|uncordon|taint|label|annotate|cp|exec|attach|debug|certificate|evict'
 GUARD_DESTRUCTIVE='delete|apply|create|patch|edit|replace|scale|autoscale|expose|run|set|rollout|drain|cordon|uncordon|taint|label|annotate|cp|exec|attach|debug|certificate|evict|auth'
 # Flags that consume the following word. Booleans must NOT be listed here — that
 # would let a destructive subcommand hide behind a flag.

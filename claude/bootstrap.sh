@@ -38,6 +38,10 @@ helm.guard
 terraform.guard
 openstack.guard
 argocd.guard
+ansible.guard
+helmfile.guard
+terragrunt.guard
+skaffold.guard
 git.guard
 gh.guard
 glab.guard"
@@ -90,7 +94,7 @@ for file in $LEGACY_HOOKS; do
   rm -f "$CLAUDE_DIR/hooks/$file"
 done
 
-echo "→ registering PreToolUse hook and plugins in settings.json"
+echo "→ registering PreToolUse hook, wrapper ask rules and plugins in settings.json"
 python3 - "$SETTINGS" "$HOOK" "$HOOK_STATUS" <<'PY'
 import json, os, sys
 
@@ -106,6 +110,20 @@ marketplaces = {
 }
 plugins = [
     "skill-creator@claude-plugins-official",
+]
+
+# `make` is the one wrapper with nothing to classify: a target name says nothing
+# about what it runs. The hook expands the recipe when it can read the Makefile,
+# and these name-based rules are the backstop for when it cannot (an included
+# fragment, a recipe built from variables). Every other wrapper has a real
+# profile instead. Keep in sync with claude/settings.json by hand — bootstrap
+# cannot read the repo.
+ask_rules = [
+    "Bash(make deploy*)",
+    "Bash(make apply*)",
+    "Bash(make destroy*)",
+    "Bash(make release*)",
+    "Bash(make publish*)",
 ]
 
 entry = {
@@ -150,6 +168,12 @@ for name, spec in marketplaces.items():
 enabled = data.setdefault("enabledPlugins", {})
 for plugin in plugins:
     enabled.setdefault(plugin, True)
+
+# Additive too: an ask list the user curated by hand is added to, never replaced.
+ask = data.setdefault("permissions", {}).setdefault("ask", [])
+for rule in ask_rules:
+    if rule not in ask:
+        ask.append(rule)
 
 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 with open(path, "w") as f:
