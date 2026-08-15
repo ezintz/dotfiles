@@ -29,8 +29,8 @@
     "command": "sh ~/.claude/statusline-command.sh"
   },
   "attribution": {
-    "commit": "🤖 Generated with Claude Code",
-    "pr": "🤖 Generated with Claude Code",
+    "commit": "Co-authored by Claude Code 🤖",
+    "pr": "Co-authored by Claude Code 🤖",
     "sessionUrl": false
   },
   "includeCoAuthoredBy": false,
