@@ -30,6 +30,7 @@ DESIRED_HOMEBREW_FORMULAE=(
   'kubernetes-cli'
   'node'
   'reattach-to-user-namespace'
+  'opentofu'
   'tmux'
   'wireguard-tools'
   'wget'
@@ -37,6 +38,7 @@ DESIRED_HOMEBREW_FORMULAE=(
 
 DESIRED_HOMEBREW_CASK_FORMULAE=(
   '1password'
+  '1password-cli'
   'docker'
   'dropbox'
   'google-chrome'
