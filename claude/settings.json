@@ -39,5 +39,6 @@
   "skipDangerousModePermissionPrompt": true,
   "remoteControlAtStartup": true,
   "skipAutoPermissionPrompt": true,
-  "theme": "dark-ansi"
+  "theme": "dark-ansi",
+  "tui": "fullscreen"
 }
