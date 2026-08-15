@@ -1,0 +1,40 @@
+# openstack — force confirmation for every mutating command.
+#
+# There is no local-safe target in this setup's clouds.yaml (every configured
+# cloud is a real environment), so there is no allowlist. Read-only commands
+# (list/show/find and bare `openstack` help) pass through. The detected cloud is
+# surfaced in the reason so the target can be sanity-checked before approving.
+
+GUARD_BINS='openstack'
+GUARD_STYLE='positional'
+
+# Mutating verbs shared across `openstack <object> <verb>` subcommands
+# (server/volume/image/network/stack/… all use the same verb set).
+GUARD_DESTRUCTIVE='create|delete|remove|add|set|unset|update|reboot|rebuild|resize|migrate|live-migrate|evacuate|shelve|unshelve|suspend|resume|pause|unpause|stop|start|restart|lock|unlock|rescue|unrescue|failover|force-delete|save|restore|revert|attach|detach|associate|disassociate|allocate|release|assign|unassign|apply|deploy|adopt|abandon|purge|revoke|trust'
+# Read verbs. Listed so a read verb appearing before a destructive word wins —
+# `openstack server list` on a host called "restart-me" is still a list.
+GUARD_READONLY='list|show|find|get|describe|check|validate|history|log|stats|usage'
+# Boolean global flags — must be known so they do not swallow the next word.
+GUARD_BOOLS='--debug|--verbose|-v|--quiet|-q|--insecure|--os-beta-command|--enable|--disable|--long|--yes|--force|--wait|--no-wait|--all|--all-projects'
+GUARD_REASON_TAIL='OpenStack has no local-safe target; explicit user confirmation required.'
+
+# Read per segment: `openstack --os-cloud staging server list && openstack
+# --os-cloud production server delete web-1` deletes on production, and a
+# whole-command grep would put "staging" in the prompt for it. Every mutation
+# asks either way, but a prompt naming the wrong environment is how the wrong
+# one gets approved.
+guard_resolve_target() {
+  local seg="$GUARD_SEG" cloud
+  cloud=$(printf '%s' "$seg" | grep -oE -- '--os-cloud[= ][^[:space:]]+' | head -n1 | sed -E 's/^--os-cloud[= ]//' | tr -d '"'"'"'')
+  if [ -z "$cloud" ]; then
+    cloud=$(printf '%s' "$seg" | grep -oE '(^|[;&|[:space:]])OS_CLOUD(_NAME)?=[^[:space:]]+' | head -n1 | sed -E 's/.*OS_CLOUD(_NAME)?=//' | tr -d '"'"'"'')
+  fi
+  if [ -z "$cloud" ]; then
+    cloud="${OS_CLOUD:-${OS_CLOUD_NAME:-}}"
+  fi
+  # A custom clouds.yaml location makes the target harder to verify at a glance.
+  if printf '%s' "$seg" | grep -qE -- '--os-cloud-config|(^|[;&|[:space:]])OS_CLIENT_CONFIG_FILE='; then
+    cloud="${cloud:-unknown} (custom clouds.yaml)"
+  fi
+  printf 'cloud "%s"' "${cloud:-unknown}"
+}

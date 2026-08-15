@@ -72,6 +72,13 @@ summarize what went where. Search the destination first: update an existing
 entry instead of adding a duplicate, and change nothing if it already covers
 the finding.
 
+Then show what was actually written, not just where it went. For every file
+touched, print the path and the full text that was added or changed —
+verbatim, in a fenced block. Anything saved to memory gets the same
+treatment: memory is invisible to the user and shapes later sessions, so
+never report it as "saved a preference to memory" and leave it at that.
+Quote it in full so it can be corrected or thrown out on the spot.
+
 ## Phase 3: Commit
 
 Commit the session's changes together with any learning files written in

@@ -1,0 +1,114 @@
+# kubectl — force confirmation for destructive commands against a non-local
+# cluster. Local contexts pass through to the normal permission flow; everything
+# else, including unknown contexts and custom kubeconfigs, has to be confirmed.
+#
+# Read-only work is never gated: get/describe/logs/diff, `rollout status`,
+# `--dry-run`, `--help`, downloads via `kubectl cp pod:/path ./local` and
+# inspection via `kubectl exec … -- cat` all pass through.
+
+. "$GUARD_DIR/guards/_kube-context.sh"
+
+GUARD_BINS='kubectl'
+GUARD_STYLE='vocab'
+
+# Every subcommand kubectl knows, both classes. The first exact token match
+# wins, so a read-only subcommand shields the words after it.
+GUARD_VOCAB='get|describe|logs|top|explain|api-resources|api-versions|version|help|cluster-info|config|auth|diff|events|wait|port-forward|proxy|completion|options|plugin|kustomize|alpha|convert|delete|apply|create|patch|edit|replace|scale|autoscale|expose|run|set|rollout|drain|cordon|uncordon|taint|label|annotate|cp|exec|attach|debug|certificate|evict'
+GUARD_DESTRUCTIVE='delete|apply|create|patch|edit|replace|scale|autoscale|expose|run|set|rollout|drain|cordon|uncordon|taint|label|annotate|cp|exec|attach|debug|certificate|evict|auth'
+# Flags that consume the following word. Booleans must NOT be listed here — that
+# would let a destructive subcommand hide behind a flag.
+GUARD_VALFLAGS='-n|--namespace|--context|--cluster|--user|--kubeconfig|--as|--as-group|--as-uid|--token|--server|-s|--request-timeout|--cache-dir|--certificate-authority|--client-certificate|--client-key|--tls-server-name|--username|--password|-f|--filename|-k|--kustomize|-o|--output|-l|--selector|--field-selector|-c|--container|--image|-v|--v|--chunk-size|--profile|--profile-output|--log-flush-frequency'
+# --dry-run, =client and =server never persist. =none does, and is excluded.
+GUARD_DRYRUN='--dry-run|--dry-run=client|--dry-run=server'
+GUARD_SAFE_TARGET="$GUARD_KUBE_LOCAL_CONTEXTS"
+
+# --- `kubectl exec … -- <payload>` -------------------------------------------
+
+# Commands that only read inside a container. Deliberately excludes anything
+# with a write mode (shells, interpreters, redis-cli/mongosh/psql, nc, tee,
+# ip/ifconfig, nvidia-smi) — an unknown payload always asks. An allowlist alone
+# is not enough: several of these have a second personality, so each risky one
+# carries an argument policy below.
+KUBECTL_EXEC_READONLY='cat|ls|dir|env|printenv|id|whoami|pwd|hostname|date|uptime|df|du|free|ps|top|head|tail|wc|stat|uname|nproc|md5sum|sha1sum|sha256sum|cksum|netstat|ss|nslookup|dig|host|getent|ping|traceroute|find|grep|egrep|fgrep|which|readlink|realpath|file|strings|lsof|vmstat|iostat|mpstat|pg_isready'
+# Commands that only read when given no operand. With one they do something else
+# entirely: `env FOO=1 rm -rf /` runs rm, `hostname box` renames the host,
+# `date "2020…"` sets the clock. Flags are fine (`uname -a`, `date -u`).
+KUBECTL_EXEC_OPERAND_FREE='env|printenv|hostname|id|whoami|pwd|uptime|uname|nproc|free|date'
+# Per-command flags that turn a reader into a writer.
+KUBECTL_EXEC_FIND_UNSAFE='-delete|-exec|-execdir|-ok|-okdir|-fprint|-fprintf|-fls'
+KUBECTL_EXEC_DATE_UNSAFE='-s|--set|--set-time'
+KUBECTL_EXEC_SS_UNSAFE='-K|--kill'
+
+# kubectl_exec_payload_reads <command> <index-in-GUARD_ARGS>
+# 0 when the payload of `kubectl exec … -- <command> …` can only read.
+# Deny-by-default: no payload, an unknown command, a shell, an interpreter or a
+# pipeline the pod's shell would expand all fall through to "ask".
+kubectl_exec_payload_reads() {
+  local payload="$1" idx="$2" i n t
+  [ -n "$payload" ] && [ "$idx" -ge 0 ] || return 1
+  [[ "$payload" =~ ^($KUBECTL_EXEC_READONLY)$ ]] || return 1
+
+  # guard_has_flag, not guard_has_token: `date --set=2026-01-01` sets the clock
+  # in a pod that holds CAP_SYS_TIME just as `date --set 2026-01-01` does.
+  case "$payload" in
+    find) guard_has_flag "$KUBECTL_EXEC_FIND_UNSAFE" && return 1 ;;
+    date) guard_has_flag "$KUBECTL_EXEC_DATE_UNSAFE" && return 1 ;;
+    ss|netstat) guard_has_flag "$KUBECTL_EXEC_SS_UNSAFE" && return 1 ;;
+  esac
+
+  if [[ "$payload" =~ ^($KUBECTL_EXEC_OPERAND_FREE)$ ]]; then
+    # Any operand (a non-flag word) means it is running or setting something.
+    n=${#GUARD_ARGS[@]}
+    i=$((idx + 1))
+    while [ $i -lt $n ]; do
+      t="${GUARD_ARGS[$i]}"
+      case "$t" in -*) ;; *) return 1 ;; esac
+      i=$((i + 1))
+    done
+  fi
+  return 0
+}
+
+# Subcommands in GUARD_DESTRUCTIVE that are only *sometimes* destructive.
+guard_classify_extra() {
+  local a1 a2 i n payload pidx
+  case "$GUARD_SUB" in
+    rollout)
+      # status/history only read; restart/undo/pause/resume mutate.
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      case "$a1" in status|history) return 1 ;; esac
+      GUARD_ACTION="rollout ${a1:-?}"; return 0 ;;
+    auth)
+      # `auth can-i` / `auth whoami` read; `auth reconcile` writes RBAC.
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      case "$a1" in
+        reconcile) GUARD_ACTION="auth reconcile"; return 0 ;;
+        *) return 1 ;;
+      esac ;;
+    apply)
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      case "$a1" in view-last-applied) return 1 ;; esac
+      GUARD_ACTION="apply"; return 0 ;;
+    cp)
+      # Download (pod:path -> local) reads; upload (local -> pod:path) writes.
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      a2=$(guard_arg_at 2 "$GUARD_VALFLAGS")
+      if [ -n "$a1" ] && [ -n "$a2" ] \
+         && [ "${a1#*:}" != "$a1" ] && [ "${a2#*:}" = "$a2" ]; then
+        return 1                                   # pod -> local, read-only
+      fi
+      GUARD_ACTION="cp (upload into pod)"; return 0 ;;
+    exec)
+      # `exec … -- <read-only cmd>` inspects; anything else can change state.
+      i=0; n=${#GUARD_ARGS[@]}; payload=""; pidx=-1
+      while [ $i -lt $n ]; do
+        if [ "${GUARD_ARGS[$i]}" = "--" ] && [ $((i + 1)) -lt $n ]; then
+          pidx=$((i + 1)); payload="${GUARD_ARGS[$pidx]##*/}"; break
+        fi
+        i=$((i + 1))
+      done
+      kubectl_exec_payload_reads "$payload" "$pidx" && return 1
+      GUARD_ACTION="exec ${payload:+-- $payload}"; return 0 ;;
+  esac
+  return 2
+}

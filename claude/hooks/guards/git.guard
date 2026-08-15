@@ -1,0 +1,126 @@
+# git — force confirmation only for pushes that destroy history on a protected
+# branch. Everything else about git is left alone.
+#
+# An ordinary `git push`, `git push origin feature/x`, even a force-push to your
+# own topic branch, is routine work and passes straight through. What asks is
+# the small set of pushes that cannot be undone from the client side:
+#
+#   git push --force origin main            history rewrite on a protected branch
+#   git push --force-with-lease             ditto — the lease protects against a
+#                                           race, not against destroying main
+#   git push --delete origin main           branch deletion
+#   git push origin :main                   the same, in refspec form
+#   git push --mirror                       replaces every ref on the remote
+#
+# Nothing local is guarded: `git reset --hard`, `git branch -D`, `git clean -fd`
+# and friends only affect this working copy, and the reflog still has the
+# commits. It is the push that makes a rewrite other people's problem.
+
+GUARD_BINS='git'
+GUARD_STYLE='vocab'
+
+# Enough of git's vocabulary that the first exact token match is the real
+# subcommand — so `git commit -m "push the release"` reads as `commit`.
+GUARD_VOCAB='add|am|apply|archive|bisect|blame|branch|checkout|cherry-pick|clean|clone|commit|config|describe|diff|fetch|gc|grep|init|log|merge|mv|notes|pull|push|rebase|reflog|remote|reset|restore|revert|rm|shortlog|show|stash|status|submodule|switch|tag|worktree|cat-file|rev-parse|ls-files|ls-remote|for-each-ref|update-ref|symbolic-ref|show-ref|help|version'
+GUARD_DESTRUCTIVE='push'
+# Global flags and push flags that consume the following word. Booleans must NOT
+# be listed — that would let `push` hide behind a flag.
+GUARD_VALFLAGS='-C|-c|--git-dir|--work-tree|--namespace|--exec-path|-o|--push-option|--receive-pack|--exec|--repo|-m|--message|-F|--file|-u(pstream)?=|--recurse-submodules|--signed|--force-if-includes='
+
+# Branches whose history other people depend on. Extend for repos that protect
+# something else; the match is anchored, so `feature/main-nav` is not `main`.
+GIT_PROTECTED='main|master|develop|dev|trunk|production|prod|staging|release|release[/-].*|v?[0-9]+\.[0-9]+(\.[0-9]+)?'
+
+guard_classify_extra() {
+  local mode='' ref branch remote
+
+  [ "$GUARD_SUB" = "push" ] || return 1
+
+  # Parsed up front so guard_resolve_target names the remote this push actually
+  # writes to, on every path out of here — `git push --mirror backup` is not a
+  # push to origin.
+  git_push_operands
+
+  # --mirror replaces every ref on the remote at once; there is no single branch
+  # to check and no safe version of it.
+  if guard_has_flag '--mirror'; then
+    GUARD_ACTION='push --mirror'
+    return 0
+  fi
+
+  if guard_has_flag '--force|-f|--force-with-lease|--force-if-includes'; then
+    mode='force-push'
+  elif guard_has_flag '--delete|-d'; then
+    mode='branch deletion'
+  fi
+
+  # A `+refspec` is a force push spelled the other way, and `:branch` with an
+  # empty source is a deletion. Both are easy to miss looking only at flags.
+  for ref in ${GIT_REFSPECS[@]+"${GIT_REFSPECS[@]}"}; do
+    case "$ref" in
+      +*)  mode="${mode:-force-push}" ;;
+      :?*) mode="${mode:-branch deletion}" ;;
+    esac
+  done
+
+  # An ordinary push. This is the common case and it is not the guard's business.
+  [ -n "$mode" ] || return 1
+
+  branch=$(git_push_branch)
+  [[ "$branch" =~ ^($GIT_PROTECTED)$ ]] || return 1
+
+  GUARD_ACTION="$mode of ${GIT_REMOTE:-origin}/$branch"
+  return 0
+}
+
+# git_push_operands — split the operands of `git push` into GIT_REMOTE and
+# GIT_REFSPECS[]. Read through guard_arg_at so the scan starts after `push` and
+# skips flag values: in `git -C /tmp/repo push --force origin main` the `-C`
+# value is a path, not the remote.
+git_push_operands() {
+  local i=1 t
+  GIT_REMOTE=''
+  GIT_REFSPECS=()
+  while t=$(guard_arg_at $i "$GUARD_VALFLAGS"); do
+    [ -n "$t" ] || break
+    if [ $i -eq 1 ]; then
+      # The first operand is the remote unless it is already a refspec.
+      case "$t" in
+        *:*|+*) ;;
+        *) GIT_REMOTE="$t"; i=$((i + 1)); continue ;;
+      esac
+    fi
+    GIT_REFSPECS[${#GIT_REFSPECS[@]}]="$t"
+    i=$((i + 1))
+  done
+}
+
+# git_push_branch — the branch the push writes to: the destination half of the
+# last refspec, or the current branch when the push has no explicit refspec.
+git_push_branch() {
+  local n=${#GIT_REFSPECS[@]} branch
+  if [ $n -gt 0 ]; then
+    branch="${GIT_REFSPECS[$((n - 1))]}"
+    branch="${branch#+}"
+    case "$branch" in *:*) branch="${branch##*:}" ;; esac   # src:dst -> dst
+    printf '%s' "${branch#refs/heads/}"
+    return 0
+  fi
+  git rev-parse --abbrev-ref HEAD 2>/dev/null || true
+}
+
+guard_resolve_target() {
+  local url
+  url=$(git remote get-url "${GIT_REMOTE:-origin}" 2>/dev/null || true)
+  if [ -n "$url" ]; then
+    url="${url#*://}"; url="${url#*@}"; url="${url%.git}"
+    printf '%s' "$url" | tr ':' '/'
+  else
+    printf '%s' "${GIT_REMOTE:-origin}"
+  fi
+}
+
+guard_reason() {
+  printf 'Destructive %s "%s" on %s. This rewrites or removes a protected branch other clones depend on; explicit user confirmation required.' \
+    "$GUARD_BIN" "$GUARD_ACTION" "$1"
+}

@@ -1,0 +1,132 @@
+# gh — force confirmation for commands that publish to or destroy something on
+# a remote GitHub repository or account.
+#
+# There is no local-safe target: `gh pr comment`, `gh pr merge` and
+# `gh release create` are visible to other people the moment they run. Reads
+# (list/view/diff/checks/checkout/clone/download/browse/search) and purely local
+# commands (`gh config`, `gh alias`, `gh extension`) pass through. The repository
+# the command actually targets is surfaced in the reason — telling
+# `github.com/ezintz/sandbox` from `github.example.com/platform/prod-infra` at
+# the prompt is the whole point.
+#
+# To allowlist a throwaway org, set GUARD_SAFE_TARGET to a regex matched against
+# the resolved target, e.g. GUARD_SAFE_TARGET='/ezintz-sandbox/'.
+
+. "$GUARD_DIR/guards/_scm-origin.sh"
+
+GUARD_BINS='gh'
+GUARD_STYLE='positional'
+
+# Mutating verbs shared across `gh <group> <verb>` subcommands. `run` is
+# deliberately absent: it is a *group* name (`gh run list`, `gh run view`), and
+# the one command that uses it as a verb is handled in guard_classify_extra.
+GUARD_DESTRUCTIVE='create|delete|delete-asset|merge|close|reopen|edit|comment|review|ready|rename|archive|unarchive|transfer|sync|fork|upload|set|add|remove|revoke|cancel|rerun|enable|disable|lock|unlock|pin|unpin|develop|update-branch|login|logout|refresh|stop|rebuild'
+# Read verbs — a read verb found before a destructive word wins, so
+# `gh pr checkout feature/delete-old-code` stays a checkout.
+GUARD_READONLY='list|view|status|diff|checks|checkout|download|browse|clone|search|get|ls|watch|logs|version|help'
+# Flags that take no value. Anything not listed here consumes the next word,
+# which is the safe default — gh puts the verb before the flags, so a
+# misclassified flag can only hide a target, never a verb.
+GUARD_BOOLS='--web|-w|--yes|-y|--confirm|--admin|--auto|--disable-auto|--delete-branch|--squash|--merge|--rebase|--draft|-d|--fill|--fill-first|--fill-verbose|--no-maintainer-edit|--public|--private|--internal|--clone|--include-parent|--source-only|--force|--verbose|--paginate|--silent|--include|-i|--slurp|--generate-notes|--latest|--prerelease|--skip-pager|--all'
+GUARD_REASON_TAIL='This publishes to or destroys something on a remote; explicit user confirmation required.'
+
+# Groups that only ever touch this machine — gating them is pure noise.
+GH_LOCAL_GROUPS='config|alias|extension|completion|status|search|browse'
+
+# Routine collaboration on pull requests and issues: opening one, discussing it,
+# reviewing it, tidying its description, bringing its branch up to date. All of
+# it is visible to other people, none of it destroys anything or is hard to walk
+# back, so it runs under the ambient permission mode like any other command.
+#
+# Deliberately NOT here: `merge` (rewrites the base branch), `close`, `delete`,
+# and every `repo`/`release`/`secret`/`workflow` verb — those either destroy
+# something or publish it somewhere it cannot be quietly retracted from.
+GH_SAFE_PAIRS='(pr|issue) (create|comment|review|ready|edit|develop|update-branch)'
+
+guard_classify_extra() {
+  local group="${GUARD_POS[0]:-}" verb="${GUARD_POS[1]:-}" method
+
+  [[ "$group" =~ ^($GH_LOCAL_GROUPS)$ ]] && return 1
+  [[ "$group $verb" =~ ^($GH_SAFE_PAIRS)$ ]] && return 1
+
+  # `gh api` has no verb — the HTTP method decides. gh defaults to GET, and to
+  # POST as soon as any field flag is present.
+  if [ "$group" = "api" ]; then
+    method=$(gh_api_method)
+    if [ -z "$method" ]; then
+      # An inferred POST on `gh api graphql` is almost always a read query, and
+      # gating every one of those would make the guard unusable. An explicit
+      # -X on graphql still asks.
+      [ "$verb" = "graphql" ] && return 1
+      guard_has_flag '-f|-F|--field|--raw-field|--input' || return 1
+      method='POST (inferred from field flags)'
+    fi
+    case "$method" in
+      GET|HEAD|get|head) return 1 ;;
+    esac
+    GUARD_ACTION="api -X $method"
+    return 0
+  fi
+
+  # `gh workflow run` dispatches a workflow. Matched as a pair because `run`
+  # cannot be in the verb set (see above).
+  if [ "$group" = "workflow" ] && [ "$verb" = "run" ]; then
+    GUARD_ACTION='workflow run'
+    return 0
+  fi
+
+  return 2
+}
+
+# gh_api_method — value of an explicit -X / --method, or nothing.
+gh_api_method() {
+  local i=0 n=${#GUARD_ARGS[@]} t
+  while [ $i -lt $n ]; do
+    t="${GUARD_ARGS[$i]}"
+    case "$t" in
+      -X|--method)
+        [ $((i + 1)) -lt $n ] && printf '%s' "${GUARD_ARGS[$((i + 1))]}"
+        return 0 ;;
+      --method=*) printf '%s' "${t#--method=}"; return 0 ;;
+      -X*)        printf '%s' "${t#-X}"; return 0 ;;
+    esac
+    i=$((i + 1))
+  done
+  return 0
+}
+
+# The origin remote is only the right answer when the command doesn't name a
+# target itself. `gh repo delete acme/scratch` and `gh api repos/acme/infra/…`
+# both do, and a prompt that names the current checkout instead is how the wrong
+# repository gets approved.
+guard_resolve_target() {
+  local group="${GUARD_POS[0]:-}" repo arg host
+  repo=$(guard_scm_flag_value '-R|--repo')
+  [ -n "$repo" ] || repo=$(guard_scm_env_value 'GH_REPO')
+  [ -n "$repo" ] || repo="${GH_REPO:-}"
+
+  if [ -z "$repo" ]; then
+    case "$group" in
+      api)
+        arg="${GUARD_POS[1]:-}"
+        repo=$(printf '%s' "$arg" | sed -nE 's#^/?repos/([^/]+)/([^/]+).*#\1/\2#p')
+        [ -n "$repo" ] || repo=$(printf '%s' "$arg" | sed -nE 's#^/?orgs/([^/]+).*#\1 (org)#p') ;;
+      repo|gist)
+        # `gh repo delete acme/scratch` — the argument is the target.
+        arg="${GUARD_POS[2]:-}"
+        [ -n "$arg" ] && repo="$arg" ;;
+      auth|ssh-key|gpg-key)
+        # Account-scoped, not repository-scoped.
+        host=$(guard_scm_flag_value '-h|--hostname')
+        printf 'account on %s' "${host:-github.com}"
+        return 0 ;;
+    esac
+  fi
+
+  [ -n "$repo" ] || repo=$(guard_scm_origin_slug)
+  if guard_is_remote_wrapper; then
+    printf 'repo %s (remote via %s)' "${repo:-unknown}" "$GUARD_HEAD"
+  else
+    printf 'repo %s' "${repo:-unknown}"
+  fi
+}

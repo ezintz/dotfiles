@@ -9,12 +9,10 @@
 #
 # Installs:
 #   ~/.claude/CLAUDE.md                       global instructions
+#   ~/.claude/hooks/env-guard.sh              the one PreToolUse hook (executable)
 #   ~/.claude/hooks/guard-lib.sh              shared command-parsing helpers
-#   ~/.claude/hooks/kubectl-env-guard.sh      kubectl/helm guard (executable)
-#   ~/.claude/hooks/terraform-env-guard.sh    terraform/tofu guard (executable)
-#   ~/.claude/hooks/openstack-env-guard.sh    openstack guard (executable)
-#   ~/.claude/hooks/argocd-env-guard.sh       argo cd guard (executable)
-#   ~/.claude/settings.json                   PreToolUse hooks + plugins merged
+#   ~/.claude/hooks/guards/*.guard            one profile per guarded tool
+#   ~/.claude/settings.json                   PreToolUse hook + plugins merged
 #
 # Safe to re-run: existing settings are preserved and hooks are not duplicated.
 # Override the source with CLAUDE_BOOTSTRAP_BASE (e.g. to pin a branch/fork).
@@ -25,14 +23,31 @@ BASE="${CLAUDE_BOOTSTRAP_BASE:-https://raw.githubusercontent.com/ezintz/dotfiles
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
-# Hooks to install: "<filename>|<statusMessage>"
-HOOKS="kubectl-env-guard.sh|Checking kubectl target environment...
-terraform-env-guard.sh|Checking terraform/tofu target...
-openstack-env-guard.sh|Checking openstack target cloud...
-argocd-env-guard.sh|Checking argocd target..."
+# The only registered hook.
+HOOK="env-guard.sh"
+HOOK_STATUS="Checking target environment..."
 
-# Sourced by the hooks, not registered itself.
+# Sourced by the hook, never registered. A raw.githubusercontent fetch cannot
+# glob a remote directory, so unlike bin/dotfiles this list is explicit —
+# adding a guard means adding its filename here too.
 SUPPORT="guard-lib.sh"
+PROFILES="_kube-context.sh
+_scm-origin.sh
+kubectl.guard
+helm.guard
+terraform.guard
+openstack.guard
+argocd.guard
+git.guard
+gh.guard
+glab.guard"
+
+# Hooks from the pre-dispatcher one-hook-per-tool layout, removed from
+# settings.json and from disk so nothing points at a script that is gone.
+LEGACY_HOOKS="kubectl-env-guard.sh
+terraform-env-guard.sh
+openstack-env-guard.sh
+argocd-env-guard.sh"
 
 fetch() { # fetch <url> <dest>
   if command -v curl >/dev/null 2>&1; then
@@ -50,7 +65,7 @@ command -v python3 >/dev/null 2>&1 || {
   exit 1
 }
 
-mkdir -p "$CLAUDE_DIR/hooks"
+mkdir -p "$CLAUDE_DIR/hooks/guards"
 
 echo "→ downloading CLAUDE.md"
 fetch "$BASE/global-instructions.md" "$CLAUDE_DIR/CLAUDE.md"
@@ -60,18 +75,26 @@ for file in $SUPPORT; do
   fetch "$BASE/hooks/$file" "$CLAUDE_DIR/hooks/$file"
 done
 
-echo "$HOOKS" | while IFS='|' read -r file msg; do
-  [ -n "$file" ] || continue
-  echo "→ downloading $file"
-  fetch "$BASE/hooks/$file" "$CLAUDE_DIR/hooks/$file"
-  chmod +x "$CLAUDE_DIR/hooks/$file"
+for file in $PROFILES; do
+  echo "→ downloading guards/$file"
+  fetch "$BASE/hooks/guards/$file" "$CLAUDE_DIR/hooks/guards/$file"
 done
 
-echo "→ registering PreToolUse hooks and plugins in settings.json"
-python3 - "$SETTINGS" <<'PY'
+echo "→ downloading $HOOK"
+fetch "$BASE/hooks/$HOOK" "$CLAUDE_DIR/hooks/$HOOK"
+chmod +x "$CLAUDE_DIR/hooks/$HOOK"
+
+for file in $LEGACY_HOOKS; do
+  [ -e "$CLAUDE_DIR/hooks/$file" ] || continue
+  echo "→ removing superseded $file"
+  rm -f "$CLAUDE_DIR/hooks/$file"
+done
+
+echo "→ registering PreToolUse hook and plugins in settings.json"
+python3 - "$SETTINGS" "$HOOK" "$HOOK_STATUS" <<'PY'
 import json, os, sys
 
-path = sys.argv[1]
+path, hook, status = sys.argv[1], sys.argv[2], sys.argv[3]
 
 # Marketplaces to know about, and plugins to force-enable from them. Claude Code
 # auto-registers claude-plugins-official on first interactive launch, but naming
@@ -85,32 +108,22 @@ plugins = [
     "skill-creator@claude-plugins-official",
 ]
 
-entries = [
-    {
-        "type": "command",
-        "command": "~/.claude/hooks/kubectl-env-guard.sh",
-        "timeout": 15,
-        "statusMessage": "Checking kubectl target environment...",
-    },
-    {
-        "type": "command",
-        "command": "~/.claude/hooks/terraform-env-guard.sh",
-        "timeout": 15,
-        "statusMessage": "Checking terraform/tofu target...",
-    },
-    {
-        "type": "command",
-        "command": "~/.claude/hooks/openstack-env-guard.sh",
-        "timeout": 15,
-        "statusMessage": "Checking openstack target cloud...",
-    },
-    {
-        "type": "command",
-        "command": "~/.claude/hooks/argocd-env-guard.sh",
-        "timeout": 15,
-        "statusMessage": "Checking argocd target...",
-    },
-]
+entry = {
+    "type": "command",
+    "command": f"~/.claude/hooks/{hook}",
+    "timeout": 15,
+    "statusMessage": status,
+}
+
+# Entries from the one-hook-per-tool layout the dispatcher replaced. Left in
+# place they would run scripts this bootstrap just deleted, and Claude Code
+# treats a hook that fails to execute as a hard error on every Bash call.
+legacy = {
+    "~/.claude/hooks/kubectl-env-guard.sh",
+    "~/.claude/hooks/terraform-env-guard.sh",
+    "~/.claude/hooks/openstack-env-guard.sh",
+    "~/.claude/hooks/argocd-env-guard.sh",
+}
 
 try:
     with open(path) as f:
@@ -124,11 +137,10 @@ if block is None:
     block = {"matcher": "Bash", "hooks": []}
     pre.append(block)
 
-cmds = block.setdefault("hooks", [])
-have = {h.get("command") for h in cmds}
-for entry in entries:
-    if entry["command"] not in have:
-        cmds.append(entry)
+cmds = [h for h in block.setdefault("hooks", []) if h.get("command") not in legacy]
+if entry["command"] not in {h.get("command") for h in cmds}:
+    cmds.append(entry)
+block["hooks"] = cmds
 
 # Additive: never drop a marketplace or plugin the user enabled by hand.
 known = data.setdefault("extraKnownMarketplaces", {})

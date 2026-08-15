@@ -1,0 +1,58 @@
+# argocd — force confirmation for every state-mutating command.
+#
+# There is no local-safe target: every Argo CD instance drives real clusters
+# (Preview/Release/Staging/Production class) and `argocd app sync` deploys
+# immediately. Read-only commands (get/list/history/diff/manifests/logs/version/…)
+# and dry runs pass through. The detected target (--core kube-context, --server
+# / ARGOCD_SERVER, or the current CLI context) is surfaced in the reason.
+
+GUARD_BINS='argocd'
+GUARD_STYLE='positional'
+
+# Mutating verbs shared across `argocd <group> <verb>` subcommands
+# (app/appset/proj/repo/repocreds/cluster/cert/account/gpg/admin).
+GUARD_DESTRUCTIVE='sync|rollback|create|delete|delete-resource|patch|patch-resource|set|unset|edit|add|add-tls|add-ssh|rm|remove|rotate-auth|update-password|generate-token|delete-token|terminate-op|run|import|apply|prune|unset-credentials'
+# Read verbs — a read verb found before a destructive word wins, so an app named
+# `my-app-set` does not read as `set`.
+GUARD_READONLY='get|list|ls|history|diff|manifests|logs|wait|resources|version|context|login|logout|relogin|can-i|export|describe|status'
+# Boolean flags that must not swallow the following word.
+GUARD_BOOLS='--core|--insecure|--plaintext|--grpc-web|--port-forward|--debug|--refresh|--hard-refresh|--prune|--dry-run|--local|--upsert|--force|--yes|--cascade|--watch|--all'
+# A dry run previews only. Decided per invocation: in `argocd app sync app
+# --dry-run && argocd app sync app` the second sync is a real deploy.
+# `--dry-run=false` is a real deploy too, so it is not listed.
+GUARD_DRYRUN='--dry-run|--dry-run=|--dry-run=true'
+GUARD_REASON_TAIL='Argo CD has no local-safe target (drives real clusters; sync deploys immediately); explicit user confirmation required.'
+
+# Read per segment for the same reason the dry-run flag is: `argocd --server
+# staging.example.com app get x && argocd --server prod.example.com app sync x`
+# syncs production, and a whole-command grep would name staging in the prompt
+# that approves it.
+guard_resolve_target() {
+  local seg="$GUARD_SEG" kubectl_bin kctx server cfg ctx
+  # `--core` talks to the cluster directly via the kube context.
+  if printf '%s' "$seg" | grep -qE -- '(^|[[:space:]])--core([[:space:]]|$)'; then
+    kubectl_bin="$(command -v kubectl || echo /opt/homebrew/bin/kubectl)"
+    kctx=$("$kubectl_bin" config current-context 2>/dev/null || true)
+    printf 'core mode -> kube-context %s' "${kctx:-unknown}"
+    return 0
+  fi
+  server=$(printf '%s' "$seg" | grep -oE -- '--server[= ][^[:space:]]+' | head -n1 | sed -E 's/^--server[= ]//' | tr -d '"'"'"'')
+  if [ -z "$server" ]; then
+    server=$(printf '%s' "$seg" | grep -oE '(^|[;&|[:space:]])ARGOCD_SERVER=[^[:space:]]+' | head -n1 | sed -E 's/.*ARGOCD_SERVER=//' | tr -d '"'"'"'')
+  fi
+  # An inherited ARGOCD_SERVER points the CLI just as the flag does.
+  [ -n "$server" ] || server="${ARGOCD_SERVER:-}"
+  if [ -n "$server" ]; then
+    printf 'server=%s' "$server"
+    return 0
+  fi
+  # Fall back to current-context from the argocd config file
+  # (--config overrides the default location).
+  cfg=$(printf '%s' "$seg" | grep -oE -- '--config[= ][^[:space:]]+' | head -n1 | sed -E 's/^--config[= ]//' | tr -d '"'"'"'')
+  [ -n "$cfg" ] || cfg="${ARGOCD_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/argocd/config}"
+  ctx=""
+  if [ -r "$cfg" ]; then
+    ctx=$(grep -E '^current-context:' "$cfg" 2>/dev/null | head -n1 | sed -E 's/^current-context:[[:space:]]*//' | tr -d '"'"'"'')
+  fi
+  printf 'context=%s' "${ctx:-unknown}"
+}

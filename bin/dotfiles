@@ -16,6 +16,8 @@ DOTFILES_LOCAL_DIRECTORY="${HOME}/.dotfiles-private"
 DESIRED_HOMEBREW_FORMULAE=(
   'ack'
   'bat'
+  ## Runs claude/tests/guards.bats, which pins the env-guard behaviour.
+  'bats-core'
   'coreutils'
   'curl'
   'duti'
@@ -205,12 +207,21 @@ function mirror_files {
   ## project file when working inside this repo.
   link "claude/global-instructions.md" ".claude/CLAUDE.md"
   link "claude/statusline-command.sh" ".claude/statusline-command.sh"
-  ## Every guard sources guard-lib.sh, so it must be linked too or all four break.
+
+  ## Drop links left behind by the pre-dispatcher one-hook-per-tool layout, so
+  ## a stale settings.json entry can't point at a script that no longer exists.
+  local stale
+  for stale in "${HOME}"/.claude/hooks/*(@N); do
+    [[ -e "${stale}" ]] || rm -f "${stale}"
+  done
+
+  ## env-guard.sh is the only registered hook; it sources guard-lib.sh and every
+  ## guards/*.guard profile, so both have to be linked or it guards nothing.
+  ## guards/ is linked as a whole directory (unlike skills/rules, nothing else
+  ## writes into it), which is what makes adding a tool a single new file.
   link "claude/hooks/guard-lib.sh" ".claude/hooks/guard-lib.sh"
-  link "claude/hooks/kubectl-env-guard.sh" ".claude/hooks/kubectl-env-guard.sh"
-  link "claude/hooks/terraform-env-guard.sh" ".claude/hooks/terraform-env-guard.sh"
-  link "claude/hooks/openstack-env-guard.sh" ".claude/hooks/openstack-env-guard.sh"
-  link "claude/hooks/argocd-env-guard.sh" ".claude/hooks/argocd-env-guard.sh"
+  link "claude/hooks/env-guard.sh" ".claude/hooks/env-guard.sh"
+  link "claude/hooks/guards" ".claude/hooks/guards"
   merge_json "claude/settings.json" ".claude/settings.json"
   ## User-scope MCP servers live in ~/.claude.json (top-level mcpServers).
   ## Deep-merge the tracked set in, preserving Claude's own state in that file.

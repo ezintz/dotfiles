@@ -1,0 +1,18 @@
+# helm — force confirmation for releases installed, upgraded, rolled back or
+# removed against a non-local cluster. Same local-context allowlist as kubectl.
+#
+# Rendering and inspection pass through: template/lint/show/diff/get/list/status
+# /history, `--dry-run`, `--help`.
+
+. "$GUARD_DIR/guards/_kube-context.sh"
+
+GUARD_BINS='helm'
+GUARD_STYLE='vocab'
+
+GUARD_VOCAB='template|lint|show|get|list|ls|status|history|search|version|help|env|repo|dependency|dep|pull|fetch|package|verify|inspect|diff|plugin|completion|docs|create|registry|push|cm-push|mapkubeapis|schema|unittest|install|upgrade|uninstall|delete|rollback|test'
+GUARD_DESTRUCTIVE='install|upgrade|uninstall|delete|rollback|test'
+GUARD_VALFLAGS='--kube-context|-n|--namespace|--kubeconfig|-f|--values|--set|--set-string|--set-json|--set-file|--set-literal|--repo|--version|-o|--output|--show-only|-s|--description|--post-renderer|--post-renderer-args|--timeout|--burst-limit|--qps|-a|--api-versions|--kube-apiserver|--kube-token|--kube-as-user|--kube-as-group|--kube-ca-file|--kube-tls-server-name|--registry-config|--repository-config|--repository-cache|--ca-file|--cert-file|--key-file|--username|--password|--keyring|--output-dir|--release-name'
+# helm's --dry-run takes an optional value; only the values that actually
+# suppress the write count. `--dry-run=false` is a real upgrade.
+GUARD_DRYRUN='--dry-run|--dry-run=|--dry-run=true|--dry-run=server|--dry-run=client'
+GUARD_SAFE_TARGET="$GUARD_KUBE_LOCAL_CONTEXTS"

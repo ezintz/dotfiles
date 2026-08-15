@@ -1,0 +1,74 @@
+# terraform / tofu — force confirmation for every state-mutating command.
+#
+# Terraform has no reliable "local" target (no --context equivalent), so there is
+# no allowlist: anything that can write state or infrastructure asks. Read-only
+# commands (plan/validate/show/output/fmt/graph/console/state list|show|pull/…)
+# pass through. The detected workspace, -chdir and -var-file are surfaced in the
+# reason so the target can be sanity-checked before approving.
+
+GUARD_BINS='terraform tofu'
+GUARD_STYLE='vocab'
+
+# First exact token match wins, so `terraform show apply.tfplan` reads as `show`.
+GUARD_VOCAB='init|validate|plan|show|output|fmt|graph|console|providers|version|help|test|metadata|get|login|logout|apply|destroy|import|taint|untaint|refresh|force-unlock|state|workspace'
+GUARD_DESTRUCTIVE='apply|destroy|import|taint|untaint|refresh|force-unlock'
+GUARD_VALFLAGS='-var|-var-file|-state|-state-out|-backup|-target|-replace|-out|-lock-timeout|-parallelism|-backend-config|-plugin-dir|-from-module'
+GUARD_REASON_TAIL='Terraform has no local-safe target; explicit user confirmation required.'
+
+# Subcommands whose destructiveness depends on the word after them.
+guard_classify_extra() {
+  local a1
+  case "$GUARD_SUB" in
+    state)
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      case "$a1" in
+        rm|mv|push|replace-provider) GUARD_ACTION="state $a1"; return 0 ;;
+        *) return 1 ;;                                   # list/show/pull read
+      esac ;;
+    workspace)
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      case "$a1" in
+        delete) GUARD_ACTION="workspace delete"; return 0 ;;
+        *) return 1 ;;                                   # list/show/select/new
+      esac ;;
+    init)
+      # Plain init is safe; a backend migration rewrites remote state.
+      if guard_has_token '-migrate-state|-force-copy'; then
+        GUARD_ACTION="init (backend migration)"; return 0
+      fi
+      return 1 ;;
+  esac
+  return 2
+}
+
+# Resolved per segment, like every other guard: `terraform -chdir=staging apply
+# && terraform -chdir=prod apply` is two different targets, and naming the first
+# one in the prompt is how the second gets approved.
+guard_resolve_target() {
+  local seg="$GUARD_SEG" bin_path chdir varfiles ws target
+  chdir=$(printf '%s' "$seg"    | grep -oE -- '-chdir=[^[:space:]]+' | head -n1 | sed 's/^-chdir=//' | tr -d '"'"'"'')
+  varfiles=$(printf '%s' "$seg" | grep -oE -- '-var-file[= ][^[:space:]]+' | sed -E 's/^-var-file[= ]//' | tr -d '"'"'"'' | paste -sd, -)
+  ws=$(printf '%s' "$seg"       | grep -oE '(^|[;&|[:space:]])TF_WORKSPACE=[^[:space:]]+' | head -n1 | sed -E 's/.*TF_WORKSPACE=//' | tr -d '"'"'"'')
+
+  # TF_WORKSPACE wins wherever it comes from, then ask the binary itself.
+  [ -n "$ws" ] || ws="${TF_WORKSPACE:-}"
+  if [ -z "$ws" ]; then
+    bin_path="$(command -v "$GUARD_BIN" || echo "/opt/homebrew/bin/$GUARD_BIN")"
+    if [ -n "$chdir" ]; then
+      ws=$("$bin_path" -chdir="$chdir" workspace show 2>/dev/null || true)
+    else
+      ws=$("$bin_path" workspace show 2>/dev/null || true)
+    fi
+  fi
+
+  target="workspace=${ws:-unknown}"
+  [ -n "$chdir" ]    && target="$target, dir=$chdir"
+  [ -n "$varfiles" ] && target="$target, var-file=$varfiles"
+  printf '%s' "$target"
+}
+
+# Keeps the "(workspace=…, dir=…)" shape rather than "targets workspace=…".
+guard_reason() {
+  printf 'Destructive %s "%s" (%s). %s' \
+    "$GUARD_BIN" "$GUARD_ACTION" "$1" "$GUARD_REASON_TAIL"
+}

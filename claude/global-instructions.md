@@ -8,7 +8,7 @@
 # Kubernetes / Helm command discipline
 
 Destructive kubectl/helm commands on non-local clusters are gated by a PreToolUse hook
-(`~/.claude/hooks/kubectl-env-guard.sh`). Run cluster commands so the hook can always
+(`~/.claude/hooks/env-guard.sh`). Run cluster commands so the hook can always
 see the true target:
 
 - Invoke `kubectl` and `helm` **directly** in the Bash tool — never through wrapper
@@ -42,7 +42,7 @@ see the true target:
 # Terraform / OpenTofu command discipline
 
 Destructive `terraform`/`tofu` commands are gated by a PreToolUse hook
-(`~/.claude/hooks/terraform-env-guard.sh`). Terraform has no local-safe target, so
+(`~/.claude/hooks/env-guard.sh`). Terraform has no local-safe target, so
 **every** state-mutating command (`apply`, `destroy`, `import`, `refresh`, `taint`,
 `state rm|mv|push`, `workspace delete`, `force-unlock`, `init -migrate-state`)
 requires confirmation.
@@ -65,7 +65,7 @@ requires confirmation.
 # OpenStack command discipline
 
 Destructive `openstack` CLI commands are gated by a PreToolUse hook
-(`~/.claude/hooks/openstack-env-guard.sh`). OpenStack has no local-safe target
+(`~/.claude/hooks/env-guard.sh`). OpenStack has no local-safe target
 (every configured cloud is a real environment), so **every** mutating command
 (`create`, `delete`, `set`, `reboot`, `rebuild`, `resize`, `migrate`, `shelve`,
 `suspend`, `stop`, `lock`, `rescue`, `evacuate`, `attach`/`detach`, etc.)
@@ -87,7 +87,7 @@ requires confirmation.
 # Argo CD command discipline
 
 Destructive `argocd` CLI commands are gated by a PreToolUse hook
-(`~/.claude/hooks/argocd-env-guard.sh`). Argo CD has no local-safe target
+(`~/.claude/hooks/env-guard.sh`). Argo CD has no local-safe target
 (every Argo CD instance drives real clusters, and `argocd app sync` deploys
 immediately), so **every** state-mutating command (`app sync`, `app delete`,
 `app rollback`, `app set`/`unset`, `app patch`/`patch-resource`/`delete-resource`,
@@ -110,23 +110,14 @@ etc.) requires confirmation.
 - Never restructure a command to avoid the confirmation prompt. Treat every
   Argo CD instance and every managed cluster as production-class.
 
-# Guard maintenance
+# Writing a command vs. running it
 
-The four guards share `~/.claude/hooks/guard-lib.sh`, which splits the command
-into segments and identifies the *real* subcommand instead of pattern-matching
-verbs anywhere in the string. Behaviour is pinned by `claude/tests/guards.bats`
-in the dotfiles repo (`bats claude/tests/guards.bats`). Any change to a guard —
-especially widening what passes through — must come with a test case in both
-directions: the read-only command that should pass, and the mutation that must
-still ask. Use fictional cluster/release/host names in tests, never real ones.
+All of the guards above distinguish the two, so write freely and don't
+restructure to dodge a prompt:
 
-Adding a guard means touching four places:
-
-1. the hook itself, plus a test case in `claude/tests/guards.bats`
-2. `claude/bootstrap.sh` — both the download list and the settings.json entries
-3. `bin/dotfiles` — a `link` line in `mirror_files`, for the cloned-repo path
-4. a section here
-
-Steps 2 and 3 are separate install paths that do not share code: bootstrap is the
-`curl | sh` route and downloads files, `mirror_files` symlinks them from the
-clone. A guard registered in only one of them silently fails on the other.
+- **Writing is not running.** Heredoc bodies are never classified — documenting
+  `kubectl --context production delete …` in a runbook, README or script does not
+  prompt. Neither does any file edit; the guards only see Bash.
+- **Running from a file is still running.** The guard reads the contents of
+  scripts a command executes (`bash deploy.sh`, `./deploy.sh`), so moving a
+  mutation into a script does not get it past the guard.

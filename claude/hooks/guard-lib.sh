@@ -73,13 +73,122 @@ guard_segments() {
   printf '%s' "$1" | tr $';|&(){}`\n' $'\n\n\n\n\n\n\n\n'
 }
 
+# guard_strip_heredocs <command> — the command with every heredoc *body*
+# removed, keeping the line that opens it.
+#
+# A heredoc body is data being written somewhere, not a command being run.
+# `cat > runbook.md <<'EOF' … kubectl --context production delete pod … EOF`
+# documents a command; it does not execute one, and segmenting on newlines made
+# every line of that body look like an invocation. Documenting a destructive
+# command is the single most common way to trip a guard that has no idea the
+# text is going into a file.
+#
+# The opening line is kept on purpose, because it can be a real command in its
+# own right: `kubectl --context production apply -f - <<'EOF'` really does apply.
+guard_strip_heredocs() {
+  local line delim='' dashed=0 trimmed spec
+  while IFS= read -r line; do
+    if [ -n "$delim" ]; then
+      trimmed="$line"
+      # Only `<<-` permits an indented terminator, and only with tabs. Being
+      # stricter than bash here would end the body early and hand the rest of
+      # the document back to the classifier.
+      if [ "$dashed" = 1 ]; then
+        while [ "${trimmed#	}" != "$trimmed" ]; do trimmed="${trimmed#	}"; done
+      fi
+      [ "$trimmed" = "$delim" ] && delim=''
+      continue
+    fi
+    printf '%s\n' "$line"
+    # `<<<` is a herestring with no body, and `$((1<<3))` is a shift; neither
+    # matches the delimiter pattern, so neither opens a body here.
+    case "$line" in
+      *'<<'*)
+        spec=$(printf '%s' "$line" | sed -nE 's/.*<<(-?)[[:space:]]*("([^"]+)"|'"'"'([^'"'"']+)'"'"'|([A-Za-z_][A-Za-z0-9_]*)).*/\1\3\4\5/p')
+        case "$spec" in
+          '') ;;
+          -*) dashed=1; delim="${spec#-}" ;;
+          *)  dashed=0; delim="$spec" ;;
+        esac ;;
+    esac
+  done <<EOF
+$1
+EOF
+}
+
+# --- executed scripts -------------------------------------------------------
+
+# guard_script_path <segment> — the script file this segment executes, if any.
+# Covers `bash deploy.sh`, `sh -e deploy.sh`, `source ./env.sh` and `./deploy.sh`.
+# `bash -c "…"` is not a file and simply fails the existence test below; that
+# form is already covered by guard_embedded_invocation.
+guard_script_path() {
+  local n i=0 t
+  guard_tokenize "$1"
+  n=${#GUARD_TOKENS[@]}
+  [ $n -gt 0 ] || return 1
+  while [ $i -lt $n ]; do
+    case "${GUARD_TOKENS[$i]}" in
+      [A-Za-z_]*=*)                       i=$((i + 1)); continue ;;
+      sudo|env|nohup|time|exec|stdbuf|doas) i=$((i + 1)); continue ;;
+    esac
+    break
+  done
+  [ $i -lt $n ] || return 1
+  t="${GUARD_TOKENS[$i]}"
+  case "${t##*/}" in
+    bash|sh|zsh|ksh|dash|source|.)
+      i=$((i + 1))
+      while [ $i -lt $n ]; do
+        case "${GUARD_TOKENS[$i]}" in
+          -*) i=$((i + 1)); continue ;;
+          *)  printf '%s' "${GUARD_TOKENS[$i]}"; return 0 ;;
+        esac
+      done
+      return 1 ;;
+    *)
+      # A path, not a PATH lookup — `./deploy.sh`, `/tmp/deploy.sh`.
+      case "$t" in ./*|../*|/*) printf '%s' "$t"; return 0 ;; esac
+      return 1 ;;
+  esac
+}
+
+# guard_script_bodies <segments> — the segments of every script the command
+# runs, so a destructive command is caught when it is *executed* from a file
+# just as it is when typed inline. Writing the script stays free; running it
+# does not.
+#
+# One level deep and bounded (4 scripts, 64 KiB each): a guard that recursed
+# through an unbounded include graph on every Bash call would cost more than it
+# is worth, and the wrapper safety net still covers what it misses.
+guard_script_bodies() {
+  local seg file n=0
+  while IFS= read -r seg; do
+    [ -n "$seg" ] || continue
+    file=$(guard_script_path "$seg") || continue
+    [ -n "$file" ] || continue
+    case "$file" in "~/"*) file="$HOME/${file#\~/}" ;; esac
+    [ -f "$file" ] && [ -r "$file" ] || continue
+    n=$((n + 1))
+    [ $n -gt 4 ] && break
+    guard_segments "$(guard_strip_heredocs "$(head -c 65536 "$file" 2>/dev/null)")"
+  done <<EOF
+$1
+EOF
+}
+
 # GUARD_TOKENS[] = the segment's words, surrounding quotes stripped.
+#
+# Quote stripping is pure parameter substitution on purpose. Forking
+# `printf | tr` per token made this the single most expensive thing the guards
+# did — it runs for every segment of every command, times every profile.
 guard_tokenize() {
   local seg="$1" t
   local raw
   GUARD_TOKENS=()
   for raw in $seg; do
-    t=$(printf '%s' "$raw" | tr -d "\"'")
+    t="${raw//\"/}"
+    t="${t//\'/}"
     [ -n "$t" ] && GUARD_TOKENS[${#GUARD_TOKENS[@]}]="$t"
   done
 }

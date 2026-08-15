@@ -1,0 +1,76 @@
+# glab — the GitLab counterpart to gh.guard: force confirmation for commands
+# that publish to or destroy something on a remote GitLab project or account.
+#
+# Reads (list/view/diff/checkout/clone/download/lint/trace) and purely local
+# commands (`glab config`, `glab alias`) pass through. The resolved host and
+# project are surfaced in the reason, which matters more here than on GitHub —
+# a self-hosted instance and gitlab.com are easy to confuse at a glance.
+#
+# To allowlist a throwaway group, set GUARD_SAFE_TARGET to a regex matched
+# against the resolved target.
+
+. "$GUARD_DIR/guards/_scm-origin.sh"
+
+GUARD_BINS='glab'
+GUARD_STYLE='positional'
+
+# Mutating verbs shared across `glab <group> <verb>` subcommands.
+GUARD_DESTRUCTIVE='create|delete|close|reopen|merge|update|approve|unapprove|revoke|rebase|note|comment|subscribe|unsubscribe|todo|set|unset|add|remove|rm|upload|archive|unarchive|transfer|fork|mirror|retry|cancel|run|trigger|play|edit|publish|protect|unprotect|rotate|sync|import|move|reassign|revert|cherry-pick|login|logout'
+# Read verbs — a read verb found before a destructive word wins.
+GUARD_READONLY='list|view|show|status|diff|checkout|download|clone|get|ls|search|lint|trace|logs|version|help|browse|artifact'
+GUARD_BOOLS='--yes|-y|--web|-w|--draft|--wip|--remove-source-branch|--squash|--auto-merge|--fill|--no-editor|--push|--all|--closed|--merged|--opened|--confirm|--force|--verbose|--silent|--recursive'
+GUARD_REASON_TAIL='This publishes to or destroys something on a remote; explicit user confirmation required.'
+
+# Groups that only ever touch this machine.
+GLAB_LOCAL_GROUPS='config|alias|completion|check-update|version'
+
+# Routine collaboration on merge requests and issues — the glab counterpart to
+# GH_SAFE_PAIRS in gh.guard, including `rebase`, which only rewrites the MR's
+# own branch. `merge`, `close` and `delete` stay gated.
+GLAB_SAFE_PAIRS='(mr|issue) (create|note|comment|update|approve|unapprove|todo|subscribe|unsubscribe|rebase)'
+
+guard_classify_extra() {
+  local group="${GUARD_POS[0]:-}" verb="${GUARD_POS[1]:-}"
+  [[ "$group" =~ ^($GLAB_LOCAL_GROUPS)$ ]] && return 1
+  [[ "$group $verb" =~ ^($GLAB_SAFE_PAIRS)$ ]] && return 1
+  return 2
+}
+
+guard_resolve_target() {
+  local group="${GUARD_POS[0]:-}" repo host arg
+  repo=$(guard_scm_flag_value '-R|--repo')
+  [ -n "$repo" ] || repo=$(guard_scm_env_value 'GITLAB_REPO')
+  [ -n "$repo" ] || repo="${GITLAB_REPO:-}"
+
+  # `glab repo delete ezintz/scratch` names its own target; the origin remote
+  # says nothing about it.
+  if [ -z "$repo" ]; then
+    case "$group" in
+      repo|project)
+        arg="${GUARD_POS[2]:-}"
+        [ -n "$arg" ] && repo="$arg" ;;
+      auth|ssh-key)
+        host=$(guard_scm_flag_value '-h|--hostname')
+        [ -n "$host" ] || host="${GITLAB_HOST:-gitlab.com}"
+        printf 'account on %s' "${host#*://}"
+        return 0 ;;
+    esac
+  fi
+
+  if [ -n "$repo" ]; then
+    # An explicit -R carries the project path but not the instance, so the host
+    # has to come from the environment for the prompt to name the right one.
+    host=$(guard_scm_env_value 'GITLAB_HOST')
+    [ -n "$host" ] || host="${GITLAB_HOST:-}"
+    host="${host#*://}"
+    [ -n "$host" ] && repo="${host%/}/${repo}"
+  else
+    repo=$(guard_scm_origin_slug)
+  fi
+
+  if guard_is_remote_wrapper; then
+    printf 'project %s (remote via %s)' "${repo:-unknown}" "$GUARD_HEAD"
+  else
+    printf 'project %s' "${repo:-unknown}"
+  fi
+}
