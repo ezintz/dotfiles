@@ -102,13 +102,8 @@ function renderChart(data: Point[]): ChartView {
   try {
     return chart(data);
   } catch (error) {
-    logError('Chart render failed', error);
+    console.error('Chart render failed', error);
     return errorState('Unable to display chart');
   }
 }
 ```
-
-Note where the `try` sits: around the call that can throw, not around a whole
-render tree. In React and similar frameworks a `try`/`catch` wrapped around
-returned markup will not catch errors thrown during rendering — that needs an
-error boundary.
