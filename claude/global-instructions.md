@@ -17,6 +17,24 @@ Neither reports failure the way a normal error does, so when a command was meant
 to replace or delete something, verify the result rather than trusting that it
 ran.
 
+# .NET (Homebrew install)
+
+Both failures below look like the tool is missing or broken rather than
+mis-configured, so check these before reinstalling anything:
+
+- **`~/.dotnet/tools` is not on PATH.** `dotnet tool install -g <tool>` reports
+  success, then the tool is "command not found". Export
+  `PATH="$PATH:$HOME/.dotnet/tools"` in the same call that uses it.
+- **`DOTNET_ROOT` is unset**, so anything that starts the runtime *without*
+  going through the `dotnet` CLI fails with "You must install .NET" even though
+  `dotnet` itself works. That covers global tools and, just as often, a built
+  apphost launched directly (`bin/Release/net10.0/MyApp`) — the usual way to
+  benchmark or drive a GUI app under measurement. `dotnet run` masks it, so the
+  failure shows up only once you switch to running the binary. Point it at the
+  Homebrew install's `libexec`:
+  `export DOTNET_ROOT="$(brew --prefix)/Cellar/dotnet/<version>/libexec"`
+  (get `<version>` from `brew list --versions dotnet`).
+
 # Git
 
 - **Use three dots, not two, against a base branch.** `git diff main...HEAD`
@@ -56,3 +74,17 @@ A target that genuinely is disposable — a benchmark database, a kind cluster �
 can be pre-approved in `~/.claude/guard-allow.conf`, one machine-wide file
 whose rules each name the project they apply to. That file is the user's:
 suggest a rule for it, never write or edit one yourself.
+
+# Worktree sessions
+
+Inside a worktree-isolated session the Bash guard refuses commands it cannot statically
+verify stay inside the worktree. Observed triggers: `for`/`while` loops, heredocs
+(`cat > f <<'EOF'`), command substitution (`$(...)`) in arguments, and tilde-with-space paths
+like `~/Library/Application Support/...`. The refusal is not about danger, so rewriting as one
+plain command per call works, and creating files with the Write tool instead of a heredoc
+works.
+
+Several repos in `~/Workspace` have **no git remote**. `EnterWorktree`'s default base ref is
+`fresh` = `origin/<default-branch>`, which does not exist there, so create the worktree
+explicitly (`git worktree add <path> -b <branch> <base-branch>`) and then enter it with
+`EnterWorktree`'s `path:` argument.
