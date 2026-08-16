@@ -16,7 +16,6 @@ DOTFILES_LOCAL_DIRECTORY="${HOME}/.dotfiles-private"
 DESIRED_HOMEBREW_FORMULAE=(
   'ack'
   'bat'
-  ## Runs claude/tests/guards.bats, which pins the env-guard behaviour.
   'bats-core'
   'coreutils'
   'curl'
@@ -25,7 +24,6 @@ DESIRED_HOMEBREW_FORMULAE=(
   'jq'
   'git'
   'git-extras'
-  'git-flow'
   'helm'
   'kubernetes-cli'
   'node'
@@ -39,7 +37,6 @@ DESIRED_HOMEBREW_FORMULAE=(
 DESIRED_HOMEBREW_CASK_FORMULAE=(
   '1password'
   '1password-cli'
-  'docker'
   'dropbox'
   'google-chrome'
   'google-drive'
@@ -52,12 +49,6 @@ DESIRED_HOMEBREW_CASK_FORMULAE=(
   'visual-studio-code'
   'jetbrains-toolbox'
   'font-jetbrains-mono-nerd-font'
-)
-
-## NPM packages
-DESIRED_NPM_PACKAGES=(
-  '@angular/cli'
-  'npm-check'
 )
 
 
