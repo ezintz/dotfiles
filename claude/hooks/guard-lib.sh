@@ -47,9 +47,15 @@ GUARD_REMOTE_HEADS='ssh|scp|docker|podman|nerdctl|lima|colima|multipass|vagrant|
 
 # --- input / output ---------------------------------------------------------
 
-# Read the hook JSON on stdin, print .tool_input.command.
-guard_input_command() {
-  "$GUARD_JQ" -r '.tool_input.command // empty' 2>/dev/null
+# Read the hook JSON on stdin, print the working directory on the first line
+# and the command on every line after it.
+#
+# One jq call for both — stdin can only be consumed once, and forking jq twice
+# on every Bash tool call to read two fields is not worth it. The cwd goes
+# first because the command is the field that can span lines; a caller that
+# gets no newline back got no command and should stop.
+guard_input() {
+  "$GUARD_JQ" -r '(.cwd // "") + "\n" + (.tool_input.command // "")' 2>/dev/null
 }
 
 # Emit permissionDecision "ask" with <reason> and exit.
@@ -62,6 +68,72 @@ guard_ask() {
     }
   }'
   exit 0
+}
+
+# --- per-project allowlist ---------------------------------------------------
+
+# Pre-approved (project, binary, target, action) combinations, one rule per
+# line, `|`-separated, `#` comments and blank lines ignored:
+#
+#   <project dir> | <binary> | <target glob> | <action glob>
+#   ~/work/acme-api | mysql | host bench-db.internal* | *
+#
+# A rule says "inside this checkout, this tool against this target may do this
+# without asking" — the benchmark database you re-seed twenty times an hour,
+# the kind cluster, the sandbox workspace. The target is matched against the
+# *resolved* target string, i.e. the exact text the prompt would have shown, so
+# what you allow is what you would have read and approved anyway. Everything
+# else in the same project still asks: a rule for bench-db.internal does
+# nothing for a mistyped prod-db.internal.
+#
+# The file lives in $HOME and nowhere else on purpose. A guard an agent can
+# switch off is not a guard, and an agent edits files inside the project all
+# day — an allowlist checked into the repo (or written to it mid-session)
+# would be self-approval with extra steps. It is read as data, never sourced,
+# and ignored unless it belongs to the user running the hook.
+#
+# Read only when a prompt is about to fire, so the common path never touches
+# the disk for it.
+GUARD_ALLOW_FILE="${GUARD_ALLOW_FILE:-$HOME/.claude/guard-allow.conf}"
+
+# guard_allowed <binary> <action> <target> — 0 when a rule covers this
+# invocation in the current working directory ($GUARD_CWD).
+guard_allowed() {
+  local bin="$1" action="$2" target="$3" p b t a rc=1 was_set=0
+  [ -f "$GUARD_ALLOW_FILE" ] && [ -r "$GUARD_ALLOW_FILE" ] || return 1
+  [ -O "$GUARD_ALLOW_FILE" ] || return 1
+  # Hostnames and SQL verbs are both case-insensitive, and the action string
+  # echoes back whatever case the command was written in ("SQL TRUNCATE" for
+  # one agent, "SQL truncate" for the next) — a rule that only matched one of
+  # them would look like it worked until the day it silently did not.
+  shopt -q nocasematch && was_set=1
+  shopt -s nocasematch
+  # `|| [ -n "$p" ]` so a final line without a trailing newline still counts.
+  while IFS='|' read -r p b t a || [ -n "$p" ]; do
+    p="$(guard_trim "$p")"
+    case "$p" in ''|'#'*) continue ;; esac
+    b="$(guard_trim "${b:-}")"
+    t="$(guard_trim "${t:-}")"
+    a="$(guard_trim "${a:-}")"
+    [ -n "$b" ] || continue
+    [ -n "$t" ] || t='*'
+    [ -n "$a" ] || a='*'
+    case "$p" in "~/"*) p="$HOME/${p#\~/}" ;; esac
+    p="${p%/}"
+    # The rule covers the project directory and everything under it, and is a
+    # glob like the other fields, so `~/work/*-bench` and a bare `*` (every
+    # project on this machine — think twice) both work.
+    case "$GUARD_CWD/" in $p/*) ;; *) continue ;; esac
+    [ "$b" = '*' ] || [ "$b" = "$bin" ] || continue
+    # Unquoted on purpose: these are globs, and the right-hand side of [[ == ]]
+    # is not word-split, so a target glob may contain spaces ("host bench-db*").
+    [[ "$target" == $t ]] || continue
+    [[ "$action" == $a ]] || continue
+    rc=0
+    break
+  done < "$GUARD_ALLOW_FILE"
+  [ "$was_set" = 1 ] || shopt -u nocasematch
+  return $rc
 }
 
 # --- segmentation / tokenizing ----------------------------------------------
@@ -464,16 +536,86 @@ guard_dry_run() {
 # rather than asking for the CLI version: `helm --kube-context production
 # upgrade app chart --version 1.2.3` is a production upgrade, not a help
 # request, and treating it as one skipped classification entirely.
+#
+# The token set is $GUARD_HELP_TOKENS, not a hardcoded pattern: bare `-h` is
+# help for every tool guarded here except mysql/psql, where `-h` is `--host`.
+# A profile whose short help flag differs (or collides, as those two do)
+# overrides GUARD_HELP_TOKENS; guard_profile_reset supplies the common default.
 guard_is_help() {
   local t i=0
   for t in ${GUARD_ARGS[@]+"${GUARD_ARGS[@]}"}; do
     [ "$t" = "--" ] && return 1
     case "$t" in
-      --help|-h|-help) return 0 ;;
       --version) [ $i -eq 0 ] && return 0 ;;
     esac
+    [[ "$t" =~ ^($GUARD_HELP_TOKENS)$ ]] && return 0
     i=$((i + 1))
   done
+  return 1
+}
+
+# --- misc string helpers -----------------------------------------------------
+
+# guard_trim — leading/trailing whitespace stripped, pure parameter expansion
+# (no fork), for comparing a segment against a raw command-line fragment.
+guard_trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+# guard_heredoc_body_for <raw-command> <opening-line> — the body text of the
+# heredoc opened by the first raw-command line containing <opening-line> as a
+# substring, or nothing.
+#
+# Exists because env-guard.sh strips every heredoc body before any profile
+# runs (see guard_strip_heredocs) — correct for tools whose payload is data
+# (kubectl YAML, helm values), wrong for a tool whose payload IS the command
+# (`mysql -h prod <<'SQL' … SQL` — the DROP is only in the body). A profile
+# that needs the body reconstructs it from $GUARD_RAW_CMD, the pre-strip
+# command env-guard.sh sets aside for exactly this.
+#
+# Substring match, not exact-line match, on purpose: <opening-line> is a
+# post-segmentation fragment (`guard_segments` may have split its source line
+# on `&&`/`;`), so it can be shorter than the raw line that contains it. First
+# match wins — two byte-identical heredoc-opening invocations in one command
+# is a corner case this does not chase.
+guard_heredoc_body_for() {
+  local cmd="$1" open="$2" line delim='' dashed=0 trimmed spec found=0 body=''
+  open="$(guard_trim "$open")"
+  [ -n "$open" ] || return 1
+  while IFS= read -r line; do
+    if [ -n "$delim" ]; then
+      trimmed="$line"
+      if [ "$dashed" = 1 ]; then
+        while [ "${trimmed#	}" != "$trimmed" ]; do trimmed="${trimmed#	}"; done
+      fi
+      if [ "$trimmed" = "$delim" ]; then
+        delim=''
+        if [ "$found" = 1 ]; then printf '%s' "$body"; return 0; fi
+        continue
+      fi
+      [ "$found" = 1 ] && body="${body}${line}
+"
+      continue
+    fi
+    case "$line" in
+      *'<<'*)
+        spec=$(printf '%s' "$line" | sed -nE 's/.*<<(-?)[[:space:]]*("([^"]+)"|'"'"'([^'"'"']+)'"'"'|([A-Za-z_][A-Za-z0-9_]*)).*/\1\3\4\5/p')
+        case "$spec" in
+          '') ;;
+          -*) dashed=1; delim="${spec#-}" ;;
+          *)  dashed=0; delim="$spec" ;;
+        esac
+        if [ -n "$delim" ] && [ "$found" = 0 ]; then
+          case "$line" in *"$open"*) found=1 ;; esac
+        fi
+        ;;
+    esac
+  done <<EOF
+$cmd
+EOF
   return 1
 }
 

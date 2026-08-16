@@ -23,13 +23,34 @@ setup() {
   # Non-local fallback context for cases that omit --context, so a machine
   # whose current context is `orbstack` doesn't silently pass ask-cases.
   export KUBE_TEST_CONTEXT="wonka-factory"
+  # The allowlist is a real file in $HOME; a case that does not opt in must not
+  # be answered by whatever this machine happens to have pre-approved.
+  export GUARD_ALLOW_FILE="$BATS_TEST_TMPDIR/no-such-allowlist.conf"
+  export TEST_CWD="$BATS_TEST_TMPDIR"
 }
 
 # run_hook <command-string> — there is one hook; it dispatches to every profile.
+# The payload carries `cwd` the way Claude Code's does, since the allowlist is
+# scoped by it.
 run_hook() {
   local cmd="$1"
   run --separate-stderr env PATH="${BATS_TEST_DIRNAME}/stubs:$PATH" \
-    "$HOOK" <<<"$(jq -cn --arg c "$cmd" '{tool_input:{command:$c}}')"
+    GUARD_ALLOW_FILE="$GUARD_ALLOW_FILE" \
+    "$HOOK" <<<"$(jq -cn --arg c "$cmd" --arg cwd "$TEST_CWD" \
+      '{cwd:$cwd, tool_input:{command:$c}}')"
+}
+
+# timed_hook <command> — run_hook under a wall-clock limit, for the cases where
+# the failure being guarded against is the hook not returning at all.
+timed_hook() {
+  run --separate-stderr env PATH="${BATS_TEST_DIRNAME}/stubs:$PATH" \
+    GUARD_ALLOW_FILE="$GUARD_ALLOW_FILE" \
+    timeout 10 "$HOOK" <<<"$(jq -cn --arg c "$1" --arg cwd "$TEST_CWD" \
+      '{cwd:$cwd, tool_input:{command:$c}}')"
+  if [ "$status" -eq 124 ]; then
+    echo "the hook timed out on a $(printf '%s' "$1" | wc -c)-byte command"
+    return 1
+  fi
 }
 
 assert_pass() { # <command>
@@ -824,6 +845,214 @@ helm template test chart'
 }
 
 # =============================================================================
+# mysql / psql — the verb is SQL text, never argv, and `-h` is --host
+# =============================================================================
+
+@test "mysql: connecting without a statement passes" {
+  assert_pass 'mysql -h prod-db.internal -u root -p'
+}
+
+@test "mysql: a read-only statement passes" {
+  assert_pass 'mysql -h prod-db.internal -e "select * from users"'
+}
+
+@test "mysql: -h is --host, not --help — a mutation still asks" {
+  # The regression this exists to catch: guard_is_help's shared default reads
+  # bare -h as a help flag, which would make this pass silently.
+  assert_ask 'mysql -h prod-db.internal -u root -e "DROP TABLE users"'
+}
+
+@test "mysql: the prompt names the host" {
+  assert_reason 'mysql -h prod-db.internal -e "DROP TABLE users"' 'prod-db.internal'
+}
+
+@test "mysql: the local default (no -h) passes" {
+  assert_pass 'mysql -e "DROP TABLE users"'
+}
+
+@test "mysql: a heredoc statement is classified, not just the opening line" {
+  assert_ask "$(printf "mysql -h prod-db.internal <<'SQL'\nDELETE FROM sessions;\nSQL")"
+}
+
+@test "mysql: a redirected file is classified" {
+  printf 'TRUNCATE TABLE sessions;\n' > "$BATS_TEST_TMPDIR/migrate.sql"
+  assert_ask "mysql -h prod-db.internal < $BATS_TEST_TMPDIR/migrate.sql"
+}
+
+@test "mysql: --login-path has no visible target, so it always asks" {
+  assert_ask 'mysql --login-path=prod -e "DROP TABLE users"'
+  assert_reason 'mysql --login-path=prod -e "DROP TABLE users"' 'login-path'
+}
+
+@test "mysql: writing SQL to a file does not run it" {
+  assert_pass 'echo "mysql -h prod-db.internal -e \"DROP TABLE users\""'
+}
+
+@test "mysql: a destructive statement later in a ;-separated -e batch still asks" {
+  # Regression: guard_segments splits on `;` blind to quoting, so this used to
+  # truncate the -e value at "select 1" and lose the drop to a disconnected,
+  # unclassified segment.
+  assert_ask 'mysql -h prod-db.internal -e "select 1; drop table x;"'
+  assert_reason 'mysql -h prod-db.internal -e "select 1; drop table x;"' 'prod-db.internal'
+}
+
+@test "mysql: a harmless multi-statement -e batch still passes" {
+  assert_pass 'mysql -h prod-db.internal -e "select 1; select 2;"'
+}
+
+@test "mysql: an && after a quoted -e value is still a real second command" {
+  assert_ask 'mysql -h prod-db.internal -e "select 1" && mysql -h prod-db.internal -e "drop table x"'
+}
+
+@test "psql: connecting without a statement passes" {
+  assert_pass 'psql -h prod-db.internal -U admin'
+}
+
+@test "psql: a read-only statement passes" {
+  assert_pass 'psql -h prod-db.internal -c "select 1"'
+}
+
+@test "psql: -h is --host, not --help — a mutation still asks" {
+  assert_ask 'psql -h prod-db.internal -c "DROP TABLE users"'
+}
+
+@test "psql: the local default (no -h) passes" {
+  assert_pass 'psql -c "DROP TABLE users"'
+}
+
+@test "psql: a connection URI names the host in the prompt" {
+  assert_ask 'psql "postgres://app:secret@prod-db.internal:5432/app" -c "DROP TABLE users"'
+  assert_reason 'psql "postgres://app:secret@prod-db.internal:5432/app" -c "DROP TABLE users"' 'prod-db.internal'
+}
+
+@test "psql: -f reads the file's SQL" {
+  printf 'ALTER TABLE users DROP COLUMN legacy_id;\n' > "$BATS_TEST_TMPDIR/migrate.sql"
+  assert_ask "psql -h prod-db.internal -f $BATS_TEST_TMPDIR/migrate.sql"
+}
+
+@test "psql: a heredoc statement is classified" {
+  assert_ask "$(printf "psql -h prod-db.internal <<'SQL'\nGRANT ALL ON users TO app;\nSQL")"
+}
+
+@test "psql: a destructive statement later in a ;-separated -c batch still asks" {
+  assert_ask 'psql -h prod-db.internal -c "select 1; drop table x;"'
+  assert_reason 'psql -h prod-db.internal -c "select 1; drop table x;"' 'prod-db.internal'
+}
+
+@test "psql: an unresolved PGSERVICE still asks" {
+  assert_ask 'PGSERVICE=prod psql -c "DROP TABLE users"'
+  assert_reason 'PGSERVICE=prod psql -c "DROP TABLE users"' 'service prod'
+}
+
+# `mysql db < migrate.sql` and `cat migrate.sql | mysql db` are the same
+# operation written two ways. Only the redirect was ever visible to the guard,
+# which left the most common way to run a migration or restore a dump — piping
+# it in — passing silently.
+
+@test "mysql: SQL piped in from a file is classified" {
+  printf 'DROP TABLE sessions;\n' > "$BATS_TEST_TMPDIR/migrate.sql"
+  assert_ask "cat $BATS_TEST_TMPDIR/migrate.sql | mysql -h prod-db.internal"
+  assert_reason "cat $BATS_TEST_TMPDIR/migrate.sql | mysql -h prod-db.internal" 'prod-db.internal'
+}
+
+@test "mysql: a read-only pipeline stays silent" {
+  printf 'SELECT count(*) FROM sessions;\n' > "$BATS_TEST_TMPDIR/report.sql"
+  assert_pass "cat $BATS_TEST_TMPDIR/report.sql | mysql -h prod-db.internal"
+  assert_pass 'echo "select 1" | psql -h prod-db.internal'
+}
+
+@test "psql: an echoed statement piped in is classified" {
+  assert_ask 'echo "DROP TABLE users" | psql -h prod-db.internal'
+  # …including when a flag stands between the command word and the SQL.
+  assert_ask 'echo -e "DROP TABLE users" | psql -h prod-db.internal'
+}
+
+@test "mysql/psql: an opaque producer upstream of the pipe asks" {
+  # Nothing to scan: whatever mysqldump or gunzip emits, the client executes
+  # it against a remote target, and a restore is not a thing to discover after
+  # the fact.
+  assert_ask 'mysqldump -h prod-db.internal app | mysql -h staging-db.internal'
+  assert_ask 'gunzip -c dump.sql.gz | psql -h prod-db.internal'
+  assert_reason 'gunzip -c dump.sql.gz | psql -h prod-db.internal' 'piped SQL'
+}
+
+@test "mysql: a pipe into the local default still passes" {
+  printf 'DROP TABLE sessions;\n' > "$BATS_TEST_TMPDIR/migrate.sql"
+  assert_pass "cat $BATS_TEST_TMPDIR/migrate.sql | mysql"
+}
+
+@test "mysql: the client's own output being piped somewhere is not a payload" {
+  assert_pass 'psql -h prod-db.internal -c "select 1" | jq .'
+}
+
+@test "psql: a later command's -c value is not read as this segment's" {
+  # Both halves are needed to reproduce: `count(*)` makes guard_segments cut
+  # the segment at the `(`, and the repair that fixes that used to run to the
+  # end of the command line and pick up the *last* -c value — the trailing
+  # "select 1" — so the production TRUNCATE was classified as a read.
+  assert_ask 'psql -h prod-db.internal -c "select count(*) from t; truncate table sessions" && psql -h localhost -c "select 1"'
+  assert_reason 'psql -h prod-db.internal -c "select count(*) from t; truncate table sessions" && psql -h localhost -c "select 1"' 'prod-db.internal'
+  assert_ask 'mysql -h prod-db.internal -e "select max(id) from t; drop table t" ; mysql -h bench-db.internal -e "select 1"'
+}
+
+@test "mysql: escaped quotes through a remote wrapper are still classified" {
+  # `\"drop` is neither a quote the value extraction recognises nor a token
+  # equal to `drop`, so this passed silently — on the one path where the local
+  # config says nothing at all about the target.
+  assert_ask 'ssh dbhost "mysql -e \"drop table t\""'
+  assert_reason 'ssh dbhost "mysql -e \"drop table t\""' 'remote via ssh'
+}
+
+@test "mysql/psql: a SQL keyword as a string literal is not a verb" {
+  # Read-only queries. Quotes are stripped only where they delimit a payload
+  # the guard extracted, never blanket-fashion, or every query filtering on a
+  # status column called 'delete' prompts — and a guard that prompts on
+  # routine work gets approved reflexively.
+  assert_pass 'mysql -h prod-db.internal -e "select * from orders where state = '"'"'delete'"'"'"'
+  assert_pass 'psql -h prod-db.internal -c "select count(*) from audit where action = '"'"'update'"'"'"'
+}
+
+@test "mysql: every -e value on the line is classified, not just one of them" {
+  assert_ask 'mysql -h prod-db.internal -e "select 1" -e "drop table t"'
+  assert_ask 'mysql -h prod-db.internal -e "drop table t" -e "select 1"'
+}
+
+@test "mysql: a large inline statement does not hang the tool call" {
+  # bash 3.2 (/bin/bash, what the hook runs under) needs ~44s to apply a
+  # bracket-class substitution to a 9 KB word, and an id list is one word.
+  # The failure mode is the worst kind — not a wrong answer, a Bash tool call
+  # that never returns — so this is timed rather than merely asserted.
+  command -v timeout >/dev/null 2>&1 || skip "needs coreutils timeout"
+  local ids
+  ids=$(seq 0 1999 | tr '\n' ',' | sed 's/,$//')
+  # The read-only one matters most: with nothing to find, every token gets
+  # scanned, including the 9 KB one. A statement whose verb comes first would
+  # return before ever reaching it and prove nothing.
+  timed_hook "mysql -h prod-db.internal -e \"select a from t where id in ($ids)\""
+  [ -z "$output" ] || { echo "expected pass-through, hook asked: $output"; return 1; }
+  timed_hook "mysql -h prod-db.internal -e \"select a from t where id in ($ids); drop table t\""
+  printf '%s' "$output" | grep -q '"permissionDecision":"ask"'
+}
+
+@test "psql: a mutation in a later segment is attributed to that segment" {
+  # The other half of the repair, and the half that catching the TRUNCATE does
+  # not prove: reading the whole line means the *first* invocation is the one
+  # that prompts, naming bench-db for a DROP that lands on prod. A prompt that
+  # names the wrong target is worse than no prompt — it is how the wrong
+  # environment gets approved.
+  local cmd='psql -h bench-db.internal -c "select 1" && psql -h prod-db.internal -c "drop table t"'
+  assert_ask "$cmd"
+  assert_reason "$cmd" 'prod-db.internal'
+  run_hook "$cmd"
+  if printf '%s' "$output" | grep -q 'bench-db'; then
+    echo "the prompt named the wrong host:"
+    echo "  cmd: $cmd"
+    echo "  out: $output"
+    return 1
+  fi
+}
+
+# =============================================================================
 # make — classified by the recipe, not by the target name
 # =============================================================================
 
@@ -967,4 +1196,78 @@ assert_vocab_covers() { # <binary> <guard-file> <verb>...
   assert_vocab_covers "$bin" \
     "${BATS_TEST_DIRNAME}/../hooks/guards/terraform.guard" \
     $("$bin" --help 2>/dev/null | awk '/^  [a-z][a-z-]+ +[A-Z]/{print $1}' | sort -u)
+}
+
+# =============================================================================
+# per-project allowlist — a pre-approved (project, tool, target, action)
+# combination runs unprompted; everything around it still asks
+# =============================================================================
+
+# allowlist <rule>… — write rules to a file only this test can see, and put
+# the session in the acme-api checkout they are written for.
+allowlist() {
+  mkdir -p "$BATS_TEST_TMPDIR/acme-api/sub" "$BATS_TEST_TMPDIR/other-project"
+  : > "$GUARD_ALLOW_FILE"
+  printf '%s\n' "$@" >> "$GUARD_ALLOW_FILE"
+  TEST_CWD="$BATS_TEST_TMPDIR/acme-api"
+}
+
+@test "allowlist: the benchmark database runs unprompted, production does not" {
+  allowlist "# throwaway, re-seeded every run" \
+            "$BATS_TEST_TMPDIR/acme-api | mysql | host bench-db.internal* | *"
+  assert_pass 'mysql -h bench-db.internal -e "TRUNCATE TABLE bench_runs"'
+  assert_ask  'mysql -h prod-db.internal -e "TRUNCATE TABLE bench_runs"'
+}
+
+@test "allowlist: a rule covers subdirectories of its project" {
+  allowlist "$BATS_TEST_TMPDIR/acme-api | mysql | host bench-db.internal* | *"
+  TEST_CWD="$BATS_TEST_TMPDIR/acme-api/sub"
+  assert_pass 'mysql -h bench-db.internal -e "TRUNCATE TABLE bench_runs"'
+}
+
+@test "allowlist: the same target in another project still asks" {
+  allowlist "$BATS_TEST_TMPDIR/acme-api | mysql | host bench-db.internal* | *"
+  TEST_CWD="$BATS_TEST_TMPDIR/other-project"
+  assert_ask 'mysql -h bench-db.internal -e "TRUNCATE TABLE bench_runs"'
+}
+
+@test "allowlist: the rule's binary is not a wildcard for its neighbours" {
+  allowlist "$BATS_TEST_TMPDIR/acme-api | mysql | host bench-db.internal* | *"
+  assert_ask 'psql -h bench-db.internal -c "TRUNCATE TABLE bench_runs"'
+}
+
+@test "allowlist: an action glob narrows the rule to one verb" {
+  allowlist "$BATS_TEST_TMPDIR/acme-api | psql | host bench-db* | SQL truncate*"
+  assert_pass 'psql -h bench-db.internal -c "TRUNCATE TABLE bench_runs"'
+  assert_pass 'psql -h bench-db.internal -c "truncate table bench_runs"'
+  assert_ask  'psql -h bench-db.internal -c "DROP TABLE bench_runs"'
+}
+
+@test "allowlist: it is not SQL-specific — any guard's target can be allowed" {
+  allowlist "$BATS_TEST_TMPDIR/acme-api | kubectl | *kind-acme* | *"
+  assert_pass 'kubectl --context kind-acme delete pod squirrel-0'
+  assert_ask  'kubectl --context wonka-factory delete pod squirrel-0'
+}
+
+@test "allowlist: a file the user does not own is ignored" {
+  # A guard whose off-switch anyone can write is not a guard. Ownership is the
+  # cheap half of that; the other half is the file living in \$HOME, where a
+  # repo cannot ship one and a session working inside a project does not stray.
+  command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null || skip "needs passwordless sudo"
+  allowlist "$BATS_TEST_TMPDIR/acme-api | mysql | host bench-db.internal* | *"
+  sudo -n chown root "$GUARD_ALLOW_FILE"
+  assert_ask 'mysql -h bench-db.internal -e "TRUNCATE TABLE bench_runs"'
+  sudo -n chown "$(id -u)" "$GUARD_ALLOW_FILE"
+}
+
+@test "allowlist: no file at all changes nothing" {
+  TEST_CWD="$BATS_TEST_TMPDIR/acme-api"
+  assert_ask 'mysql -h bench-db.internal -e "TRUNCATE TABLE bench_runs"'
+}
+
+@test "allowlist: the project field is a glob too" {
+  allowlist "$BATS_TEST_TMPDIR/*-api | mysql | host bench-db.internal* | *"
+  assert_pass 'mysql -h bench-db.internal -e "TRUNCATE TABLE bench_runs"'
+  TEST_CWD="$BATS_TEST_TMPDIR/other-project"
+  assert_ask 'mysql -h bench-db.internal -e "TRUNCATE TABLE bench_runs"'
 }

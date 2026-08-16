@@ -9,7 +9,7 @@
 # A profile declares (all optional except GUARD_BINS):
 #
 #   GUARD_BINS        space-separated binaries the profile guards ("terraform tofu")
-#   GUARD_STYLE       vocab | positional  — how the action verb is found
+#   GUARD_STYLE       vocab | positional | sql  — how the action verb is found
 #   GUARD_VOCAB       vocab style: every subcommand the tool knows, read or write
 #   GUARD_VALFLAGS    vocab style: flags that consume the following word
 #   GUARD_DESTRUCTIVE alternation of state-mutating verbs
@@ -20,22 +20,48 @@
 #   GUARD_DRYRUN      alternation of flags that make this invocation persist nothing
 #   GUARD_SAFE_TARGET regex; a resolved target matching it passes through
 #   GUARD_REASON_TAIL sentence appended to the default prompt reason
+#   GUARD_HELP_TOKENS alternation guard_is_help treats as a help flag; default
+#                     '--help|-h|-help' — a profile whose `-h` means something
+#                     else (mysql/psql: --host) overrides it
 #
 #   guard_resolve_target()  prints the target of the current segment ($GUARD_SEG)
-#   guard_classify_extra()  optional; 0 = destructive (sets GUARD_ACTION),
-#                           1 = read-only, 2 = no opinion, apply the default check
+#   guard_classify_extra()  vocab/positional: optional, 0 = destructive (sets
+#                           GUARD_ACTION), 1 = read-only, 2 = no opinion, apply
+#                           the default check. sql style: required — it IS the
+#                           classifier, since there is no vocab/positional verb
+#                           to fall back to (see mysql.guard/psql.guard).
 #   guard_reason()          optional; prints the whole prompt reason, given the
 #                           resolved target as $1
 #
 # See guard-lib.sh for how a command line is split and how a subcommand is
 # identified without tripping on release names, file paths and flag values.
+#
+# A prompt that is about to fire is checked against the user's per-project
+# allowlist first (guard_allowed), so a disposable target — the benchmark
+# database, the kind cluster — can be pre-approved for one checkout without
+# weakening any profile. The file is only read at that point, never on the
+# common path.
 set -u
 
 GUARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$GUARD_DIR/guard-lib.sh"
 
-GUARD_CMD=$(guard_input_command) || exit 0
+GUARD_INPUT=$(guard_input) || exit 0
+# No newline back means no command field at all (a non-Bash tool call).
+case "$GUARD_INPUT" in
+  *'
+'*) GUARD_CWD="${GUARD_INPUT%%'
+'*}"; GUARD_CMD="${GUARD_INPUT#*'
+'}" ;;
+  *) exit 0 ;;
+esac
 [ -n "$GUARD_CMD" ] || exit 0
+# The project the command runs in, for guard_allowed. Every hook payload
+# carries it; the fallback is for running this script by hand.
+[ -n "$GUARD_CWD" ] || GUARD_CWD="$PWD"
+# Pre-strip copy: a profile whose payload IS its heredoc body (mysql/psql SQL,
+# not YAML/values data) reconstructs it from this via guard_heredoc_body_for.
+GUARD_RAW_CMD="$GUARD_CMD"
 
 # Heredoc bodies are data being written, not commands being run — strip them
 # before anything else looks at the command line. Guarded by a glob so the
@@ -81,6 +107,7 @@ guard_profile_reset() {
   GUARD_REASON_TAIL='Explicit user confirmation required.'
   GUARD_ACTION=''
   GUARD_SEG=''
+  GUARD_HELP_TOKENS='--help|-h|-help'
 }
 
 guard_default_reason() {
@@ -122,6 +149,18 @@ guard_classify() {
       verb=$(guard_pos_match "${GUARD_DESTRUCTIVE}|${GUARD_READONLY}") || return 1
       [[ "$verb" =~ ^($GUARD_DESTRUCTIVE)$ ]] || return 1
       GUARD_ACTION="$verb"
+      ;;
+    sql)
+      # No subcommand vocabulary and no fixed verb position — the verb is a
+      # SQL keyword that can appear in an -e/-c value, a heredoc body or a
+      # redirected file, never in argv itself. guard_classify_extra is not
+      # optional for this style; it IS the classifier (mysql.guard/psql.guard).
+      if guard_is_fn guard_classify_extra; then
+        guard_classify_extra; rc=$?
+        [ $rc -eq 0 ] && return 0
+        [ $rc -eq 1 ] && return 1
+      fi
+      return 1
       ;;
     *)
       return 1 ;;
@@ -170,6 +209,10 @@ for guard_profile in "${GUARD_PROFILES[@]}"; do
          && printf '%s' "$guard_target" | grep -qE "$GUARD_SAFE_TARGET"; then
         continue
       fi
+
+      # A target the user pre-approved for this project — the throwaway
+      # benchmark database, the kind cluster. See guard_allowed in guard-lib.sh.
+      guard_allowed "$GUARD_BIN" "$GUARD_ACTION" "$guard_target" && continue
 
       if guard_is_fn guard_reason; then
         guard_ask "$(guard_reason "$guard_target")"

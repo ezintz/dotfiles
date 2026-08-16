@@ -1,0 +1,69 @@
+# mysql — force confirmation for a state-mutating statement (DROP/DELETE/
+# UPDATE/ALTER/…) run against a non-local server.
+#
+# There is no subcommand argv the way kubectl/helm have one — the verb is
+# inside SQL text, in an -e/--execute value, a heredoc body, or a file piped
+# in via `<`. See _sql.sh for how that text is found and scanned, including a
+# multi-statement -e value (`mysql -e "select 1; drop table x;"`), which
+# needs its own repair since the shared segmenter would otherwise truncate it
+# mid-quote before this file ever sees it.
+#
+# `-h` is mysql's --host, not help, so GUARD_HELP_TOKENS overrides the shared
+# default that reads bare `-h` as `--help` — see guard-lib.sh's guard_is_help.
+# Getting this wrong is silent: `mysql -h prod.db -e "DROP TABLE users"` would
+# read as a help request and never reach classification at all.
+#
+# Connecting without a statement (no -e, no heredoc, no redirect) always
+# passes: nothing has been asked to run yet, same as a bare `kubectl exec` into
+# a shell.
+
+. "$GUARD_DIR/guards/_sql.sh"
+
+GUARD_BINS='mysql'
+GUARD_STYLE='sql'
+GUARD_HELP_TOKENS='--help|-\?'
+GUARD_REASON_TAIL='mysql has no local-safe target beyond localhost/socket; explicit user confirmation required.'
+
+guard_classify_extra() {
+  guard_sql_classify '' '-e|--execute'
+}
+
+# Read per segment, like every other guard here: two invocations on one
+# command line can target two different servers, and naming the first one in
+# the prompt is how the second gets approved.
+guard_resolve_target() {
+  local seg="$GUARD_SEG" host port sock
+
+  if guard_is_remote_wrapper; then
+    printf '(remote via %s)' "$GUARD_HEAD"; return 0
+  fi
+  if printf '%s' "$seg" | grep -qE -- '--login-path[= ]'; then
+    # A stored credential profile (mysql_config_editor) — the host it points
+    # at is not visible on the command line.
+    printf '(login-path credentials; target not locally resolvable)'; return 0
+  fi
+  if printf '%s' "$seg" | grep -qE -- '--defaults-file[= ]|--defaults-extra-file[= ]'; then
+    printf '(custom defaults-file; target not locally resolvable)'; return 0
+  fi
+
+  sock=$(printf '%s' "$seg" | grep -oE -- '(-S|--socket)[= ][^[:space:]]+' | head -n1 | sed -E 's/^(-S|--socket)[= ]//' | tr -d '"'"'"'')
+  if [ -n "$sock" ]; then
+    printf 'socket %s' "$sock"; return 0
+  fi
+
+  host=$(printf '%s' "$seg" | grep -oE -- '(-h|--host)[= ][^[:space:]]+' | head -n1 | sed -E 's/^(-h|--host)[= ]//' | tr -d '"'"'"'')
+  [ -n "$host" ] || host=$(guard_env_value 'MYSQL_HOST')
+  [ -n "$host" ] || host="${MYSQL_HOST:-}"
+
+  port=$(printf '%s' "$seg" | grep -oE -- '(-P|--port)[= ][^[:space:]]+' | head -n1 | sed -E 's/^(-P|--port)[= ]//' | tr -d '"'"'"'')
+
+  if [ -n "$port" ]; then
+    printf 'host %s port %s' "${host:-localhost}" "$port"
+  else
+    printf 'host %s' "${host:-localhost}"
+  fi
+}
+
+# No -h/--host, no socket and no login-path/defaults-file means the client
+# default: connect via the local Unix socket.
+GUARD_SAFE_TARGET='^host (localhost|127\.0\.0\.1)( port [0-9]+)?$|^socket /'

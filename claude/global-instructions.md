@@ -25,8 +25,9 @@ ran.
 
 # Guarded tools
 
-`kubectl`, `helm`, `terraform`/`tofu`, `openstack`, `argocd`, `git`, `gh` and
-`glab` are gated by a PreToolUse hook (`~/.claude/hooks/env-guard.sh`). It
+`kubectl`, `helm`, `terraform`/`tofu`, `openstack`, `argocd`, `git`, `gh`,
+`glab`, `mysql` and `psql` are gated by a PreToolUse hook
+(`~/.claude/hooks/env-guard.sh`). It
 decides what needs confirmation when the command runs, and its behaviour is
 pinned by tests, so what it catches is not restated here. Three things it
 cannot see:
@@ -42,11 +43,16 @@ cannot see:
   prompt names the wrong cluster — worse than no prompt at all. Same for
   `terraform workspace select` and `argocd context`. One operation per Bash call.
 - **A target you never named.** Pass `--context` / `--kube-context` / `-chdir=` /
-  `--os-cloud` / `--server` explicitly, even when the active one is already
-  correct, so the prompt shows something verifiable instead of ambient state.
-  Never point `KUBECONFIG=` or `--kubeconfig` at an alternate config file.
+  `--os-cloud` / `--server` / `-h` explicitly, even when the active one is
+  already correct, so the prompt shows something verifiable instead of ambient
+  state. Never point `KUBECONFIG=` or `--kubeconfig` at an alternate config file.
 
 Read-only inspection is never gated — use it freely, in any context. Writing a
 command is not running it, so a destructive example in a runbook or heredoc is
 fine. If something read-only does prompt, that is a guard bug worth reporting;
 never restructure a command to dodge a prompt.
+
+A target that genuinely is disposable — a benchmark database, a kind cluster —
+can be pre-approved in `~/.claude/guard-allow.conf`, one machine-wide file
+whose rules each name the project they apply to. That file is the user's:
+suggest a rule for it, never write or edit one yourself.

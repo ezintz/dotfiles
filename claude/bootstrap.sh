@@ -33,6 +33,7 @@ HOOK_STATUS="Checking target environment..."
 SUPPORT="guard-lib.sh"
 PROFILES="_kube-context.sh
 _scm-origin.sh
+_sql.sh
 kubectl.guard
 helm.guard
 terraform.guard
@@ -44,7 +45,9 @@ terragrunt.guard
 skaffold.guard
 git.guard
 gh.guard
-glab.guard"
+glab.guard
+mysql.guard
+psql.guard"
 
 # Hooks from the pre-dispatcher one-hook-per-tool layout, removed from
 # settings.json and from disk so nothing points at a script that is gone.

@@ -1,0 +1,69 @@
+# psql — force confirmation for a state-mutating statement (DROP/DELETE/
+# UPDATE/ALTER/…) run against a non-local server. Same shape as mysql.guard;
+# see _sql.sh for how the SQL text is found (a -c/-f/`<` payload lives outside
+# argv, unlike kubectl/helm's subcommand-shaped verbs).
+#
+# `-h` is psql's --host, not help, so GUARD_HELP_TOKENS overrides the shared
+# default the way mysql.guard does — see guard-lib.sh's guard_is_help.
+#
+# Connecting without a statement (no -c, no heredoc, no -f/redirect) always
+# passes.
+
+. "$GUARD_DIR/guards/_sql.sh"
+
+GUARD_BINS='psql'
+GUARD_STYLE='sql'
+GUARD_HELP_TOKENS='--help|-\?'
+GUARD_REASON_TAIL='psql has no local-safe target beyond localhost/socket; explicit user confirmation required.'
+
+guard_classify_extra() {
+  guard_sql_classify '-f|--file' '-c|--command'
+}
+
+# Read per segment for the same reason mysql.guard is.
+guard_resolve_target() {
+  local seg="$GUARD_SEG" host port service m
+
+  if guard_is_remote_wrapper; then
+    printf '(remote via %s)' "$GUARD_HEAD"; return 0
+  fi
+
+  # A connection URI or conninfo string overrides -h/-p wherever it appears
+  # (as -d/--dbname's value or a bare positional), so check for one first.
+  m=$(printf '%s' "$seg" | grep -oE 'postgres(ql)?://[^[:space:]]+' | head -n1)
+  if [ -n "$m" ]; then
+    printf 'uri host %s' "$(printf '%s' "$m" | sed -E 's#^postgres(ql)?://([^/@]*@)?([^/:?]+).*#\3#')"
+    return 0
+  fi
+  m=$(printf '%s' "$seg" | grep -oE '(^|[[:space:]"'"'"'])host=[^[:space:]"'"'"']+' | head -n1 | sed -E 's/.*host=//')
+  if [ -n "$m" ]; then
+    printf 'conninfo host %s' "$m"; return 0
+  fi
+
+  host=$(printf '%s' "$seg" | grep -oE -- '(-h|--host)[= ][^[:space:]]+' | head -n1 | sed -E 's/^(-h|--host)[= ]//' | tr -d '"'"'"'')
+  [ -n "$host" ] || host=$(guard_env_value 'PGHOST')
+  [ -n "$host" ] || host="${PGHOST:-}"
+
+  if [ -z "$host" ]; then
+    service=$(guard_env_value 'PGSERVICE')
+    [ -n "$service" ] || service="${PGSERVICE:-}"
+    if [ -n "$service" ]; then
+      # A service name resolves through pg_service.conf, which is not read
+      # here — the target it points at is not visible on the command line.
+      printf 'service %s (unresolved)' "$service"; return 0
+    fi
+  fi
+
+  port=$(printf '%s' "$seg" | grep -oE -- '(-p|--port)[= ][^[:space:]]+' | head -n1 | sed -E 's/^(-p|--port)[= ]//' | tr -d '"'"'"'')
+  [ -n "$port" ] || port=$(guard_env_value 'PGPORT')
+
+  if [ -n "$port" ]; then
+    printf 'host %s port %s' "${host:-localhost}" "$port"
+  else
+    printf 'host %s' "${host:-localhost}"
+  fi
+}
+
+# No -h/--host/PGHOST, no URI/conninfo host and no PGSERVICE means the client
+# default: connect via the local Unix socket.
+GUARD_SAFE_TARGET='^host (localhost|127\.0\.0\.1)( port [0-9]+)?$|^uri host (localhost|127\.0\.0\.1)$|^conninfo host (localhost|127\.0\.0\.1)$'
