@@ -1,3 +1,14 @@
 .DS_Store?
 *.local
 claude/skills/*-workspace/
+
+# Not-yet-ready skills/refs/agents: kept on disk (bin/dotfiles links them
+# locally regardless of git-tracking status) but not checked in.
+claude/skills/code-review/
+claude/skills/code-review-and-quality/
+claude/skills/diff-artifact/
+claude/skills/git-diff/
+claude/skills/performance-optimization/
+claude/skills/security-and-hardening/
+claude/refs/
+claude/agents/
