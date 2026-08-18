@@ -46,7 +46,7 @@ Glob rules worth checking:
 - Confirm each pattern matches real files. A glob that matches nothing is a rule
   that never loads, and nothing reports it.
 
-### 2. The always-on budget
+### 2. The budget — always-on and per-edit
 
 Sum the line counts of every unscoped rule and add the project CLAUDE.md files.
 That total is what loads in every session. The documented target is under 200
@@ -56,6 +56,24 @@ combined figure as the number to defend.
 For each unscoped rule ask: is this relevant when Claude is working *anywhere*
 in the repo? If it is relevant only to some paths, it wants `paths`. If it is
 relevant only to some tasks, it wants to be a skill.
+
+A scoped rule has a second budget the always-on total never shows: it is
+injected **in full** on every edit to every file its globs match. Compare the
+analyser's match count against the number of files the rule actually discusses.
+A rule of 30 lines about libmpv callbacks scoped to `src/**` bills all 148
+source files for knowledge that concerns 5 — scoped, entirely legitimate
+content, and still the most expensive thing in the directory.
+
+Two shapes to flag:
+
+- **A glob far broader than the subject** — a whole project directory or
+  `src/**` when the rule names a handful of files. Narrowing costs nothing.
+- **A large rule scoped onto a hot file.** A 3,000-word rule listing the app's
+  busiest view-model is paid on every unrelated edit to it. If only one section
+  concerns that file, split the rule and scope the halves separately.
+
+Report per-edit cost as the mean rule words loaded per matching file, before
+and after. That is the number the user feels on ordinary work.
 
 ### 3. Derivability — the sharpness test
 
@@ -97,7 +115,30 @@ again, and does it happen before or after the mistake? After is not recovery.
 Pitfalls almost never survive a cut, because the whole reason they are written
 down is that nothing else surfaces them in time.
 
-### 5. Cross-rule conflicts
+### 5. Density — the form of what survives
+
+Derivability decides whether content stays. Density decides what it costs once
+it does. A rule is re-injected in full on every matching edit, so a paragraph
+that carries one instruction is billed for the paragraph.
+
+- **Bullets, not prose.** An instruction and its reason belong on one bullet,
+  joined by an em dash — not a narrative paragraph with the rule buried in it.
+- **The rule states the constraint; the code carries the evidence.**
+  Measurements, the bug that forced the choice, and the silent-failure mode
+  belong in a comment at the enforcement point. A rule that retells them pays
+  for the same story twice on every edit that loads both.
+- **Flag any rule paragraph that restates a code comment.** Check the files the
+  rule scopes: when the comment at the enforcement point is the fuller copy —
+  it usually is, since it carries the actual numbers — the rule keeps a
+  one-line invariant plus a pointer, and drops the retelling.
+- **Prose is not automatically a finding.** War stories that span several files,
+  or that no single enforcement point owns, have nowhere better to live. The
+  test is whether a specific file already says it, not whether it reads long.
+
+This is a rewrite, not a cut, so the recovery test above is satisfied by
+construction — the invariant stays in the rule. Quantify it as words removed.
+
+### 6. Cross-rule conflicts
 
 Collect every `paths` pattern and find overlaps. Rules with overlapping globs
 load together, and contradictions between them are resolved arbitrarily. Report
@@ -106,13 +147,13 @@ each overlapping set and whether the rules actually disagree.
 Also check for the same instruction stated in two files, and for a rule
 restating something already in CLAUDE.md.
 
-### 6. Verifiability
+### 7. Verifiability
 
 Instructions must be concrete enough to check. Prefer "run `npm test` before
 committing" over "test your changes"; "use 2-space indentation" over "format
 code properly". Vague guidance costs tokens and changes nothing.
 
-### 7. Placement — should this be a rule at all?
+### 8. Placement — should this be a rule at all?
 
 | Content | Belongs in |
 | --- | --- |
@@ -140,6 +181,11 @@ is unreliable in that position — promote it to CLAUDE.md, or enforce it in a h
 - ❌ Two rules with overlapping globs giving conflicting instructions
 - ❌ Vague guidance that cannot be verified
 - ❌ Content duplicated between a rule and CLAUDE.md
+- ❌ A rule paragraph retelling a measurement or war story that a code comment
+  at the enforcement point already carries in fuller form
+- ❌ Narrative prose where a bullet would carry the same instruction
+- ❌ A `paths` glob far broader than the rule's subject — scoped, but billing
+  every unrelated edit in the directory
 - ❌ Development notes: changelogs, timestamps, "validated on…", TODOs
 - ❌ Hardcoded credentials, tokens or API keys
 - ❌ Absolute paths (`/Users/…`, `C:\Users\…`) or machine-specific hostnames
@@ -172,18 +218,25 @@ Then do the parts that need reading:
    analyser counts lines; only you can judge what the lines say.
 2. Apply the derivability test to every section — cut what the codebase already
    states.
-3. For each overlapping set the analyser found, decide whether the rules
+3. Apply the density test to what survives. For each rule, open the files it
+   scopes and compare its paragraphs against the comments at the enforcement
+   points; a rule that retells one keeps the invariant and drops the story.
+4. Check every scoped rule's match count against the files it actually
+   discusses. A glob far wider than the subject is the cheapest finding in the
+   review to fix and usually the largest.
+5. For each overlapping set the analyser found, decide whether the rules
    actually contradict each other or merely coexist.
-4. Check verifiability, then placement against the table above.
-5. Triage the hygiene hits. The analyser matches patterns, not meaning, so each
+6. Check verifiability, then placement against the table above.
+7. Triage the hygiene hits. The analyser matches patterns, not meaning, so each
    one needs a call. A **live secret** is a finding — rules are committed and
    shared, so treat them as public within the organisation and keep only the
    variable name. A **service identifier** (Jira cloud ID, project key, site
    URL) is fine; those are the non-derivable facts rules exist to hold. An
    **absolute path** is a portability bug, not a security one — make it relative.
-6. Read `references/output-format.md` and write the review to that template.
-   Lead with the context budget, and quantify each cut in lines removed from the
-   always-on total — that is the number the user feels.
+8. Read `references/output-format.md` and write the review to that template.
+   Lead with the context budget. Quantify cuts in lines removed from the
+   always-on total, and rescoping and density work in mean rule words per
+   matching edit — those are the numbers the user feels.
 
 ## Reference Documentation
 

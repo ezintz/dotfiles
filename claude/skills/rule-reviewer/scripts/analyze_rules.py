@@ -86,7 +86,25 @@ def parse_frontmatter(text):
         return None, set()
     fm = m.group(1)
     keys = set(re.findall(r"^([A-Za-z_][\w-]*):", fm, re.M))
-    paths = re.findall(r"^\s*-\s*[\"']?(.+?)[\"']?\s*$", fm, re.M)
+    if "paths" not in keys:
+        return None, keys
+
+    # Value of `paths:` up to the next top-level key (or end of frontmatter).
+    pm = re.search(r"^paths:[ \t]*(.*?)(?=^[A-Za-z_][\w-]*:|\Z)", fm, re.M | re.S)
+    body = pm.group(1) if pm else ""
+
+    # Two spellings are both valid YAML and both appear in the wild:
+    #   paths: ["src/**", "docs/*.md"]      flow sequence, possibly wrapped
+    #   paths:\n  - "src/**"                block sequence
+    # Matching only the block form silently yields zero patterns, which reads
+    # downstream as "scoped, matches nothing" — no dead-glob or overlap finding
+    # is produced and the scope column renders empty.
+    flow = re.search(r"\[(.*)\]", body, re.S)   # greedy: bracket expressions may contain ]
+    if flow:
+        paths = [q or bare for q, bare in
+                 re.findall(r"""["']([^"']+)["']|([^,\s\[\]]+)""", flow.group(1))]
+    else:
+        paths = re.findall(r"^\s*-\s*[\"']?(.+?)[\"']?\s*$", body, re.M)
     return paths, keys
 
 
@@ -166,7 +184,7 @@ def main():
 
     a = report["always_on"]
     print(f"ALWAYS-ON BUDGET: {a['total']} lines "
-          f"({a['unscoped_rule_lines']} unscoped rules + {a['claude_md_lines']} CLAUDE.md)"
+          f"({a['unscoped_rule_lines']} from unscoped rules + {a['claude_md_lines']} CLAUDE.md)"
           f"{'  ** OVER 200 TARGET **' if a['over_target'] else ''}\n")
 
     print(f"{'rule':<26} {'lines':>5} scope")
