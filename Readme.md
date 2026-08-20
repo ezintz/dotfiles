@@ -75,27 +75,41 @@ machine-specific or non-public settings never have to land in this repository.
 ### Packages
 
 Homebrew formulae and casks are defined inline at the top of `bin/dotfiles` — edit
-that file to add or remove packages. It currently installs, among others:
+that file to add or remove packages. The full set is:
+
+**Formulae**
 
 - [ack](http://beyondgrep.com/): Tool like grep, optimized for programmers.
 - [bat](https://github.com/sharkdp/bat): A `cat` clone with syntax highlighting.
 - [bats-core](https://github.com/bats-core/bats-core): Test framework for Bash; runs this repository's test suite.
 - [coreutils](http://www.gnu.org/software/coreutils/): The GNU Core Utilities.
 - [curl](http://curl.haxx.se/): Tool for client-side URL transfers.
-- [duti](https://github.com/moretension/duti): Sets default applications for document types.
+- [duti](https://github.com/moretension/duti): Sets the default application for a document type.
 - [fortune](<https://en.wikipedia.org/wiki/Fortune_(Unix)>): Displays a pseudorandom message from a database of quotations.
-- [git](http://git-scm.com/), [git-extras](https://github.com/tj/git-extras): Distributed version control system, and some extras for it.
-- [helm](https://helm.sh/), [kubernetes-cli](https://kubernetes.io/docs/reference/kubectl/): Kubernetes package manager and CLI.
+- [git](http://git-scm.com/): Distributed version control system.
+- [git-extras](https://github.com/tj/git-extras): Some extras for `git`.
+- [helm](https://helm.sh/): Package manager for Kubernetes.
 - [jq](https://jqlang.github.io/jq/): Command-line JSON processor.
+- [kubernetes-cli](https://kubernetes.io/docs/reference/kubectl/): `kubectl`, the Kubernetes command-line tool.
 - [node](http://nodejs.org/): JavaScript runtime.
 - [opentofu](https://opentofu.org/): Open source infrastructure as code.
-- [tmux](https://tmux.github.io/): Terminal multiplexer.
+- [reattach-to-user-namespace](https://github.com/ChrisJohnsen/tmux-MacOSX-pasteboard): Gives tmux sessions access to the macOS pasteboard.
+- [tmux](https://tmux.github.io/): Terminal multiplexer like [screen](https://www.gnu.org/software/screen/).
 - [wget](http://www.gnu.org/software/wget/): GNU Wget is a free software package for retrieving files.
 - [wireguard-tools](https://www.wireguard.com/): WireGuard VPN tooling.
 
-Casks cover the GUI side: 1Password, Google Chrome, Microsoft Edge, OrbStack,
-Sequel Ace, Slack, Stats, Visual Studio Code, JetBrains Toolbox, and the
-JetBrains Mono Nerd Font.
+**Casks**
+
+- [1password](https://1password.com/) and [1password-cli](https://developer.1password.com/docs/cli/): Password manager, and its command-line interface.
+- [dropbox](https://www.dropbox.com/) and [google-drive](https://www.google.com/drive/): File sync.
+- [google-chrome](https://www.google.com/chrome/) and [microsoft-edge](https://www.microsoft.com/edge): Browsers.
+- [krisp](https://krisp.ai/): Noise cancellation for calls.
+- [orbstack](https://orbstack.dev/): Docker and Linux containers on macOS.
+- [sequel-ace](https://sequel-ace.com/): MySQL/MariaDB database client.
+- [slack](https://slack.com/): Chat.
+- [stats](https://github.com/exelban/stats): System monitor for the menu bar.
+- [visual-studio-code](https://code.visualstudio.com/) and [jetbrains-toolbox](https://www.jetbrains.com/toolbox-app/): Editors and IDEs.
+- [font-jetbrains-mono-nerd-font](https://www.nerdfonts.com/): The terminal font.
 
 ## Tests
 
