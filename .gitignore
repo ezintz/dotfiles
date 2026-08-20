@@ -1,5 +1,6 @@
 .DS_Store?
 *.local
+bin/phpstorm
 claude/skills/*-workspace/
 
 # Not-yet-ready skills/refs/agents: kept on disk (bin/dotfiles links them
