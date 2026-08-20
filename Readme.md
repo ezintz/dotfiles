@@ -1,49 +1,33 @@
 # dotfiles
 
-[dotfiles](https://dotfiles.github.io/) gives you the possibility to customize your system. These are mine.
+[dotfiles](https://dotfiles.github.io/) gives you the possibility to customize your
+system. These are mine: shell (Zsh/Prezto), Git, SSH, tmux, macOS defaults, and a
+global Claude Code setup.
+
+macOS only.
 
 ## Prerequisites
 
-Please make sure that you have at least [Zsh](http://www.zsh.org/) 4.3.17 or higher installed on your system if you would like to run the automated installation and make use of [prezto](https://github.com/ezintz/prezto).
+- macOS with the Xcode command line tools (`xcode-select --install`)
+- [Zsh](http://www.zsh.org/) 4.3.17 or higher, for the automated installation and
+  [prezto](https://github.com/ezintz/prezto)
 
-## What's inside my dotfiles?
-
-Obviously [prezto](https://github.com/sorin-ionescu/prezto) which is an awesome configuration framework for [Zsh](http://www.zsh.org/). Please note that I adjusted the paths to work with this repository.
-
-Default set of settings for Mac OS X which are gratuitously stolen from [@mathiasbynens](https://mths.be/dotfiles) and customized to my needs.
-
-### Homebrew formulae (only Mac OS X)
-
-- [coreutils](http://www.gnu.org/software/coreutils/): The GNU Core Utilities are the basic file, shell and text manipulation utilities of the GNU operating system.
-- [ack](http://beyondgrep.com/): Tool like grep, optimized for programmers.
-- [curl](http://curl.haxx.se/): Tool for client-side URL transfers.
-- [fortune](<https://en.wikipedia.org/wiki/Fortune_(Unix)>): Simple program that displays a pseudorandom message from a database of quotation.
-- [git](http://git-scm.com/): Distributed version control system.
-- [git-extras](https://github.com/tj/git-extras): Some extras for `git`
-- [git-flow](https://github.com/nvie/gitflow): Extension to provide high-level repository operations.
-- [git-lfs](https://github.com/github/git-lfs): Extension for versioning large files
-- [node](http://nodejs.org/): Node.js is a platform built on [Chrome's JavaScript runtime](https://code.google.com/p/v8/) for easily building fast, scalable applications.
-- [tmux](https://tmux.github.io/): Terminal multiplexer like [screen](https://www.gnu.org/software/screen/).
-- [wget](http://www.gnu.org/software/wget/): GNU Wget is a free software package for retrieving files.
-- [docker](https://www.docker.com/products/docker-engine), [docker-compose](https://www.docker.com/products/docker-compose) and [docker-machine](https://www.docker.com/products/docker-machine): The basic docker toolbox
-
-### npm packages
-
-- [n](https://github.com/visionmedia/n): Tool for Node.js version management.
-
-### Python packages
-
-- [Pygments](http://pygments.org/): Generic syntax highlighter.
+Homebrew is installed by `bin/dotfiles` if it is missing.
 
 ## Installation
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/master/bin/dotfiles | /usr/bin/env zsh
+curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/bin/dotfiles | /usr/bin/env zsh
 ```
+
+This clones the repository to `~/.dotfiles` and runs the full setup. If you cloned
+it yourself, run `git submodule update --init --recursive` first.
 
 ## Usage
 
-Just do whatever you did before. In addition you also got a new command `dotfiles` that you can use. It will update the desired packages and run the configuration.
+After setup, `bin/` is on your `PATH` (via `zprofile`), so `dotfiles` works as a
+command from anywhere. It syncs the repository, installs/updates packages, creates
+the symlinks, and applies the macOS configuration.
 
 ```sh
 dotfiles --no-configuration \ # Do not apply any configuration
@@ -54,11 +38,82 @@ dotfiles --no-configuration \ # Do not apply any configuration
 
 _Note: To be able to run the synchronization you should commit the changes that you make._
 
-# Credits
+Editing files in this repository immediately affects the live configuration — the
+setup symlinks them into `~` rather than copying them.
 
-To all the authors of the tools that are used by dotfiles and all the other dotfiles repositories.
+## What's inside my dotfiles?
 
-# License
+- **`prezto/`** — a submodule pointing at my [prezto](https://github.com/ezintz/prezto)
+  fork, an awesome configuration framework for [Zsh](http://www.zsh.org/). The
+  runtime configs live in `prezto/runcoms/` (`zpreztorc` for modules, `zprofile`
+  for `PATH` and tool integrations).
+- **`git/`** — `gitconfig`, `gitignore`, `gitattributes`, `gitk` and `tigrc`. The
+  identity is read from `~/.gitauthor`, which is not tracked here and is created
+  interactively on first setup.
+- **`ssh/`** — a `config` that includes everything in `~/.ssh/config.d/`, so
+  per-host configs can be added (and selectively committed) under `ssh/config.d/`.
+- **`tmux/`** — `tmux.conf` plus [tpm](https://github.com/tmux-plugins/tpm),
+  tmux-sensible and tmux-yank as submodules.
+- **`claude/`** — the global (`~/.claude/`) [Claude Code](https://claude.ai/code)
+  setup: instructions, skills, agents, rules, settings, and a `PreToolUse` env
+  guard that makes destructive commands aimed at a non-local target ask first.
+  The details live in [CLAUDE.md](CLAUDE.md).
+- **`iterm2/`** — the iTerm2 preferences plist and the OneDark color scheme. These
+  are not applied by `bin/dotfiles`; import them manually in iTerm2's preferences.
+- **`bin/_macos`** — a default set of settings for macOS (Dock, Finder, Safari and
+  friends), gratuitously stolen from [@mathiasbynens](https://mths.be/dotfiles) and
+  customized to my needs.
+- `curlrc` and `wgetrc`.
 
-Non-third party files are licensed under the WTFPL; terms and conditions can be
-found at: [http://www.wtfpl.net/about/](http://www.wtfpl.net/about/)
+### Private overlay
+
+An optional `~/.dotfiles-private` directory (a separate, untracked repository) can
+hold `gitconfig.local`, `zpreztorc.local`, `tmux.conf.local` and `zprofile.local`.
+If it exists, those files are symlinked into `~` alongside the tracked config, so
+machine-specific or non-public settings never have to land in this repository.
+
+### Packages
+
+Homebrew formulae and casks are defined inline at the top of `bin/dotfiles` — edit
+that file to add or remove packages. It currently installs, among others:
+
+- [ack](http://beyondgrep.com/): Tool like grep, optimized for programmers.
+- [bat](https://github.com/sharkdp/bat): A `cat` clone with syntax highlighting.
+- [bats-core](https://github.com/bats-core/bats-core): Test framework for Bash; runs this repository's test suite.
+- [coreutils](http://www.gnu.org/software/coreutils/): The GNU Core Utilities.
+- [curl](http://curl.haxx.se/): Tool for client-side URL transfers.
+- [duti](https://github.com/moretension/duti): Sets default applications for document types.
+- [fortune](<https://en.wikipedia.org/wiki/Fortune_(Unix)>): Displays a pseudorandom message from a database of quotations.
+- [git](http://git-scm.com/), [git-extras](https://github.com/tj/git-extras): Distributed version control system, and some extras for it.
+- [helm](https://helm.sh/), [kubernetes-cli](https://kubernetes.io/docs/reference/kubectl/): Kubernetes package manager and CLI.
+- [jq](https://jqlang.github.io/jq/): Command-line JSON processor.
+- [node](http://nodejs.org/): JavaScript runtime.
+- [opentofu](https://opentofu.org/): Open source infrastructure as code.
+- [tmux](https://tmux.github.io/): Terminal multiplexer.
+- [wget](http://www.gnu.org/software/wget/): GNU Wget is a free software package for retrieving files.
+- [wireguard-tools](https://www.wireguard.com/): WireGuard VPN tooling.
+
+Casks cover the GUI side: 1Password, Google Chrome, Microsoft Edge, OrbStack,
+Sequel Ace, Slack, Stats, Visual Studio Code, JetBrains Toolbox, and the
+JetBrains Mono Nerd Font.
+
+## Tests
+
+There is no linting. The one test suite pins the behaviour of the Claude Code env
+guards:
+
+```sh
+bats claude/tests/guards.bats
+```
+
+Run it after any change under `claude/hooks/`.
+
+## Credits
+
+To all the authors of the tools that are used by dotfiles and all the other
+dotfiles repositories.
+
+## License
+
+Non-third-party files are licensed under the WTFPL+; see [LICENSE](LICENSE).
+Bundled submodules and third-party code keep their own licenses.
