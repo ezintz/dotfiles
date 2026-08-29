@@ -114,33 +114,48 @@ It ranks the new text against the comments in exactly the files that rule is
 charged against. Where the enforcement point already carries the fact, replace
 what was written with a one-line invariant and a pointer to it.
 
-Present findings and written changes in this format, one line of context above each:
+Present findings and written changes in this format, one line of context above
+each. **Every finding opens with its reach** — `Global` for anything under
+`~/.claude`, `Project` for anything in the repo — so scope is readable at a
+glance instead of inferred from a `~` or a `.` in the path below it. Never
+leave it off to mean global.
+
+**Pick the emoji for the finding itself**, never a fixed one — a shell for a
+shell trap, a stethoscope for a health check, a retry arrow for backoff. A
+column that reads the same on every line carries no information:
 
 ```markdown
-<emoji> Skill gap: Cost estimates were wrong multiple times
-→ [~/.claude/CLAUDE.md] Added token counting reference table
+🐚 Global · Knowledge => `unsetopt CLOBBER` makes `>` fail instead of overwriting
+[~/.claude/CLAUDE.md] Added the redirection trap to the shell section
 
-<emoji> Skill gap: Cost estimates were wrong multiple times
-→ [./CLAUDE.md] Added token counting reference table
+🛡️ Project · Knowledge => The dispatcher globs `*.guard`, so `_` files are helpers
+[./CLAUDE.md] Documented why a profile filename cannot start with `_`
 
-<emoji> Rule => Knowledge: Worker crashes on 429/400 instead of retrying
-→ [./.claude/rules/<rule-file>] Added error-handling rules for worker
+🧮 Global · Skill gap => Cost estimates were wrong every time they were asked for
+[~/.claude/skills/<skill>/SKILL.md] Added the token counting reference table
 
-<emoji> Skill => Automation: Checking service health after deploy is manual
-→ [./.claude/skills/<skill>/SKILL.md] Created post-deploy health check skill spec
+🩺 Project · Automation => Post-deploy health checks were run by hand
+[./.claude/skills/<skill>/SKILL.md] Created the health check skill spec
+
+🔁 Project · Rule gap => Worker crashes on 429/400 instead of backing off
+[./.claude/rules/<rule-file>] Added the retry policy and scoped its `paths:`
 ```
 
-Show an inline diff for each file touched, so the user can verify. Memory
-writes have no diff — quote what was saved in full, since it is otherwise
-invisible and shapes later sessions.
+Order them Global first, then Project. A session that wrote to both is the one
+where reach is easiest to get wrong, and grouping makes a misfiled finding
+visible before it is committed.
 
-````markdown
-<emoji> <type> => <heading>
-[<file>] <brief description>
-```diff
-<changes made>
-```
-````
+**Make every write with `Edit` or `Write`, never with a Bash heredoc, `sed` or
+a script.** Only that tool result renders as a diff on every host. A fenced
+`diff` block in the reply is coloured in the terminal but flat in the panel,
+and `git diff --color` reaches the transcript rather than the user. A change
+written through Bash renders nowhere at all, so it lands unreviewed.
+
+Write each file as its own tool call, so its diff lands next to the finding it
+belongs to rather than in one block at the end.
+
+Memory writes have no diff. Quote what was saved in full — memory is
+invisible to the user and shapes later sessions.
 
 ## Phase 3: Commit
 
