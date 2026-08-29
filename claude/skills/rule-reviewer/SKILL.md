@@ -1,6 +1,6 @@
 ---
 name: rule-reviewer
-description: Reviews a project's `.claude/rules/` files against Claude Code's rules spec — path scoping, the always-on context budget, glob correctness, cross-rule conflicts, and whether the content is derivable from the codebase. Use when asked to review, audit, trim or sharpen rules; when CLAUDE.md or the rules directory feels bloated; when deciding whether something belongs in a rule, CLAUDE.md, a skill or a hook; or after adding, renaming or reorganising rule files.
+description: Reviews a project's `.claude/rules/` files against Claude Code's rules spec — path scoping, the always-on context budget, glob correctness, cross-rule conflicts, and whether the content is derivable from the codebase or already stated in the code comments it duplicates. Use when asked to review, audit, trim, dedup or sharpen rules; when CLAUDE.md or the rules directory feels bloated or context cost is a concern; when deciding whether a fact belongs in a rule, a code comment, CLAUDE.md, a skill or a hook; or after adding, growing, renaming or reorganising rule files.
 allowed-tools: Read Grep Glob Bash WebFetch
 ---
 
@@ -117,20 +117,17 @@ down is that nothing else surfaces them in time.
 
 ### 5. Density — the form of what survives
 
-Derivability decides whether content stays. Density decides what it costs once
-it does. A rule is re-injected in full on every matching edit, so a paragraph
-that carries one instruction is billed for the paragraph.
+Derivability decides whether content stays; density decides what it costs once
+it does, since a rule is re-injected in full on every matching edit.
 
 - **Bullets, not prose.** An instruction and its reason belong on one bullet,
   joined by an em dash — not a narrative paragraph with the rule buried in it.
-- **The rule states the constraint; the code carries the evidence.**
-  Measurements, the bug that forced the choice, and the silent-failure mode
-  belong in a comment at the enforcement point. A rule that retells them pays
-  for the same story twice on every edit that loads both.
-- **Flag any rule paragraph that restates a code comment.** Check the files the
-  rule scopes: when the comment at the enforcement point is the fuller copy —
-  it usually is, since it carries the actual numbers — the rule keeps a
-  one-line invariant plus a pointer, and drops the retelling.
+- **Flag any rule paragraph that restates a code comment.** `comment-inventory.py
+  --rule <name>` prints the comments from exactly the files that rule is charged
+  against; `--overlap` ranks them against the rule's own bullets. When the
+  comment at the enforcement point is the fuller copy — it usually is, since it
+  carries the actual numbers — the rule keeps a one-line invariant plus a
+  pointer, and drops the retelling.
 - **Prose is not automatically a finding.** War stories that span several files,
   or that no single enforcement point owns, have nowhere better to live. The
   test is whether a specific file already says it, not whether it reads long.
@@ -144,7 +141,7 @@ Collect every `paths` pattern and find overlaps. Rules with overlapping globs
 load together, and contradictions between them are resolved arbitrarily. Report
 each overlapping set and whether the rules actually disagree.
 
-Also check for the same instruction stated in two files, and for a rule
+Also check for the same instruction stated in two rule files, and for a rule
 restating something already in CLAUDE.md.
 
 ### 7. Verifiability
@@ -212,15 +209,42 @@ It reports: the always-on budget against the 200-line target, every pattern with
 its match count, dead globs, invalid bracket expressions, over-budget brace
 expansion, ignored frontmatter keys, overlapping patterns, and hygiene hits.
 
+Its companion answers the other mechanical question — what the code already
+says. It dumps the substantive comments from exactly the files a rule's `paths:`
+charges it against, which is the comparison the dedup pass in step 3 needs:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/comment-inventory.py" <repo-root> --rules
+python3 "${CLAUDE_SKILL_DIR}/scripts/comment-inventory.py" <repo-root> --rule <name>
+python3 "${CLAUDE_SKILL_DIR}/scripts/comment-inventory.py" <repo-root> --rule <name> --overlap
+```
+
+`--overlap` ranks each rule bullet against those comments by shared rare
+vocabulary, so a rule scoping 80+ files is still reviewable. It ranks *literal*
+overlap: a high score can be two statements that merely share jargon, and a
+duplicate worded differently scores zero. Use it to choose where to start
+reading, never as the verdict.
+
 Then do the parts that need reading:
 
 1. Read every rule file, plus every CLAUDE.md that loads alongside them. The
    analyser counts lines; only you can judge what the lines say.
 2. Apply the derivability test to every section — cut what the codebase already
    states.
-3. Apply the density test to what survives. For each rule, open the files it
-   scopes and compare its paragraphs against the comments at the enforcement
-   points; a rule that retells one keeps the invariant and drops the story.
+3. Apply the density test to what survives — the dedup pass. Run
+   `comment-inventory.py` for the rule and classify every claim in it:
+
+   | Where the fact lives | What to do |
+   |---|---|
+   | In a code comment, anchored to one enforcement point | **Delete from the rule.** Name the class/member so the reader can find it. |
+   | In a code comment *and* CLAUDE.md *and* a rule | Keep the shortest prohibition in one place; delete the other two. |
+   | Spans several files, no single enforcement point | **Keep in the rule** — this is what rules are for. |
+   | Nowhere | Add it as a code comment (the default home), not to the rule. |
+
+   **Do not trust a miss.** A comment often states the fact in different words
+   than the rule does, which is exactly what neither `rg` nor `--overlap` can
+   see. Grep the concept, not the identifier, and read the surrounding block
+   before calling anything absent.
 4. Check every scoped rule's match count against the files it actually
    discusses. A glob far wider than the subject is the cheapest finding in the
    review to fix and usually the largest.

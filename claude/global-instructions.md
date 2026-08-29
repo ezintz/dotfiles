@@ -18,6 +18,28 @@ machine, and three of its settings fail in the direction that looks like success
   shell quirk look identical. Use `${=var}` (`SH_WORD_SPLIT`) or an array
   (`a=(x y z); for a in $a[@]`) when splitting is actually wanted.
 
+## Knowledge / Memory
+
+**Write a comment only for what the reader cannot get from the code.** Never restate the name,
+signature or control flow — a comment narrating an assignment, a loop or an obvious early return is
+deleted on sight, including one already in the file.
+
+**Every fact gets exactly one home**, because a second copy is billed on every edit that loads both:
+
+- **A code comment — the default.** Anything anchored to one enforcement point: the measurement, the
+  upstream bug, the silent-failure mode, what was already tried.
+- **A rule** — injected in full on every edit matching its `paths:`. Only invariants spanning several
+  files, and "don't undo this" warnings that must land *before* the file is opened. State the
+  invariant in one sentence and name the code that enforces it; never retell the reasoning that
+  already lives there. Scope `paths:` to the files it can actually change a decision about — `src/**`
+  or a whole project directory bills every unrelated edit for it.
+- **This file.** Only what applies globally, or a prohibition so costly it must be seen on every
+  task.
+- **A skill.** The procedure for one task, loaded only while that task is running — never the
+  placement rules above, which are already in context by the time any skill opens.
+
+Before adding to a rule, check whether the fact is already in a comment.
+
 # .NET (Homebrew install)
 
 Both failures below look like the tool is missing or broken rather than

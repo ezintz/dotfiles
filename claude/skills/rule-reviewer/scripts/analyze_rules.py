@@ -93,18 +93,24 @@ def parse_frontmatter(text):
     pm = re.search(r"^paths:[ \t]*(.*?)(?=^[A-Za-z_][\w-]*:|\Z)", fm, re.M | re.S)
     body = pm.group(1) if pm else ""
 
-    # Two spellings are both valid YAML and both appear in the wild:
+    # Three spellings are all valid YAML and all appear in the wild:
     #   paths: ["src/**", "docs/*.md"]      flow sequence, possibly wrapped
     #   paths:\n  - "src/**"                block sequence
-    # Matching only the block form silently yields zero patterns, which reads
+    #   paths: src/**, docs/*.md            bare comma-separated scalar
+    # A spelling that is not matched silently yields zero patterns, which reads
     # downstream as "scoped, matches nothing" — no dead-glob or overlap finding
     # is produced and the scope column renders empty.
     flow = re.search(r"\[(.*)\]", body, re.S)   # greedy: bracket expressions may contain ]
     if flow:
         paths = [q or bare for q, bare in
                  re.findall(r"""["']([^"']+)["']|([^,\s\[\]]+)""", flow.group(1))]
-    else:
+    elif re.search(r"^\s*-\s", body, re.M):
         paths = re.findall(r"^\s*-\s*[\"']?(.+?)[\"']?\s*$", body, re.M)
+    else:
+        # A `#` here is a YAML comment, not a glob character; splitting on the
+        # commas first would carry it into the last pattern.
+        scalar = re.sub(r"\s+#.*$", "", body.strip(), flags=re.M)
+        paths = [p.strip().strip("\"'") for p in scalar.split(",") if p.strip()]
     return paths, keys
 
 

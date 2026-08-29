@@ -3,25 +3,9 @@ name: git-commit
 description: End-of-work checklist — reviews the session for durable lessons (skill gaps, knowledge, automation ideas), writes them to CLAUDE.md/rules, then commits everything together. Use when the user invokes /git-commit, or signals the work itself is finished: "wrap things up", "end session", "ship it", "we're done", "open a PR/MR". NOT for a routine commit inside ongoing work — "commit this", "commit and push", "save that" — which is plain git with no review.
 ---
 
-# Git commit
-
-At the end of a piece of work: review the session for durable lessons, write
-them into the right file, then commit everything together. A commit asked for
-mid-work is Phase 3 alone — see below.
-
-## When this runs
-
-The review is the substance of this skill and it is not free: it reads the
-session back and writes files. It belongs at the end of the *work*, not at
-every commit.
-
-- **Run it** for `/git-commit`, or when the user signals the work is done —
-  wrap up, end session, ship it, we're done, open a PR/MR.
-- **Skip to Phase 3** for a routine commit mid-work. Commit what was asked and
-  stop: no review, no learning files, no mention of the phases.
-- **When it is unclear, commit first** and offer the review in one line
-  afterwards. Never hold a commit the user asked for behind a review they
-  did not.
+When it is unclear whether the work is finished, commit first and offer the
+review afterwards — never hold a requested commit behind a review the user
+didn't ask for.
 
 ## Phase 1: Review
 
@@ -50,10 +34,8 @@ otherwise rediscover the hard way. It is not a finding if it restates:
 - a convention already visible in the repo's own layout or config;
 - what the code plainly says, which is exactly what a rule must *not* be.
 
-The bar is "a competent engineer who knows this stack would still get this
-wrong." Restructuring work is especially prone to producing a finding that
-merely narrates the restructuring — the new layout is the artifact, and it
-does not need a paragraph telling the next session to respect it.
+The bar is: "a competent engineer who knows this stack would still get this
+wrong."
 
 For each finding, record what happened, what should happen instead (as an
 instruction Claude could follow), and where it goes.
@@ -96,37 +78,13 @@ in `./CLAUDE.local.md` and is never committed, and a lesson about the
 user's preferences or working style isn't a file at all — save it via the
 memory system.
 
-Present findings in this format, one line of context above each:
-
-```
-✅ Skill gap: Cost estimates were wrong multiple times
-→ [CLAUDE.md] Added token counting reference table
-
-✅ Knowledge: Worker crashes on 429/400 instead of retrying
-→ [Rules] Added error-handling rules for worker
-
-✅ Automation: Checking service health after deploy is manual
-→ [Skill] Created post-deploy health check skill spec
-```
-
 ## How to write it
-
-Bullets, not prose. A rule is re-read on every matching edit, so the narrative
-version of a lesson is billed again and again for the one instruction inside it.
 
 - **One bullet per finding, phrased as an instruction** — do X, never Y.
 - **Lead with the rule.** If a reason is needed it rides the same bullet after
   an em dash; it does not get a paragraph of its own.
 - **Two lines each, maximum.** A finding that will not compress is either two
   findings or belongs in the code instead.
-- **Evidence goes in the code, not the rule.** Measurements, the bug that forced
-  the choice, the silent-failure mode — put them in a comment at the enforcement
-  point. The rule states the constraint and points there.
-- **Never retell what another file already says.** Read the destination and the
-  relevant code first; if the fact is already at its enforcement point, the rule
-  gets a pointer, not a second copy.
-- **Scope `paths:` to the files the rule can actually change a decision about.**
-  `src/**`, or a whole project directory, bills every unrelated edit for it.
 - **Prefer a bullet on an existing rule** over a new file.
 
 ## Phase 2: Save learnings
@@ -141,12 +99,48 @@ at its enforcement point, write the pointer rather than a second copy.
 After writing a rule, confirm its `paths:` globs match real files. A glob that
 matches nothing is a rule that never loads, and nothing reports it.
 
-Then show what was actually written, not just where it went. For every file
-touched, print the path and the full text that was added or changed —
-verbatim, in a fenced block. Anything saved to memory gets the same
-treatment: memory is invisible to the user and shapes later sessions, so
-never report it as "saved a preference to memory" and leave it at that.
-Quote it in full so it can be corrected or thrown out on the spot.
+Then check the second-copy claim rather than asserting it — for each rule
+touched this session, not the whole directory, which is `rule-reviewer`'s job:
+
+```bash
+python3 ~/.claude/skills/rule-reviewer/scripts/comment-inventory.py \
+    --rule <name> --overlap
+```
+
+A user-level rule needs its full path — `--rule ~/.claude/rules/<name>.md`;
+the bare name only resolves against the current repo's `.claude/rules/`.
+
+It ranks the new text against the comments in exactly the files that rule is
+charged against. Where the enforcement point already carries the fact, replace
+what was written with a one-line invariant and a pointer to it.
+
+Present findings and written changes in this format, one line of context above each:
+
+```markdown
+<emoji> Skill gap: Cost estimates were wrong multiple times
+→ [~/.claude/CLAUDE.md] Added token counting reference table
+
+<emoji> Skill gap: Cost estimates were wrong multiple times
+→ [./CLAUDE.md] Added token counting reference table
+
+<emoji> Rule => Knowledge: Worker crashes on 429/400 instead of retrying
+→ [./.claude/rules/<rule-file>] Added error-handling rules for worker
+
+<emoji> Skill => Automation: Checking service health after deploy is manual
+→ [./.claude/skills/<skill>/SKILL.md] Created post-deploy health check skill spec
+```
+
+Show an inline diff for each file touched, so the user can verify. Memory
+writes have no diff — quote what was saved in full, since it is otherwise
+invisible and shapes later sessions.
+
+````markdown
+<emoji> <type> => <heading>
+[<file>] <brief description>
+```diff
+<changes made>
+```
+````
 
 ## Phase 3: Commit
 
