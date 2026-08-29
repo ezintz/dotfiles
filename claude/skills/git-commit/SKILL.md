@@ -164,3 +164,10 @@ Phase 2. Read the last ~10 subject lines and match them — a repo's convention
 is its own and is rarely the generic one. Stage explicitly by path
 — never `git add -A` or `git commit -a` — so nothing unrelated rides along.
 `CLAUDE.local.md` is never staged or committed.
+
+**A `Global` finding needs its own commit in its own repo.** `~/.claude` is not
+a repository; its entries are symlinks into the dotfiles checkout, so a write
+there never appears in the project's `git status` and is lost from view
+entirely unless it is committed with `git -C`. Resolve the symlink to find the
+repo and the in-repo name, which is not always the deployed one —
+`~/.claude/CLAUDE.md` is `claude/global-instructions.md`.
