@@ -159,8 +159,25 @@ def analyze(skill_dir):
         r["files"].append({"path": rel, "lines": len(
             f.read_text(encoding="utf-8", errors="replace").splitlines())})
 
-    referenced = set(re.findall(r"(?:references|scripts|assets|examples)/[\w./-]+", text))
-    r["pointers"] = [{"path": p, "exists": (d / p).is_file()} for p in sorted(referenced)]
+    # Consume any leading path before the keyword directory, so a pointer into
+    # *another* skill is seen whole. Matching the bare tail instead makes
+    # `~/.claude/skills/other/scripts/x.py` read as this skill's `scripts/x.py`
+    # and reports a working absolute path as dead — a spec-level problem for a
+    # file that is right there.
+    # The skill-dir variable *is* the skill root, so drop it before scanning:
+    # left in, its trailing slash reads as an absolute path and every bundled
+    # file referenced the documented way is reported missing.
+    scan = re.sub(r"\$\{?CLAUDE_SKILL_DIR\}?/", "", text)
+    referenced, external = set(), set()
+    for tok in re.findall(r"[~\w./-]*(?:references|scripts|assets|examples)/[\w./-]+", scan):
+        if tok.startswith(("~", "/")):
+            external.add(tok)
+        else:
+            referenced.add(tok[2:] if tok.startswith("./") else tok)
+
+    r["pointers"] = ([{"path": p, "exists": (d / p).is_file()} for p in sorted(referenced)]
+                     + [{"path": p, "exists": Path(p).expanduser().is_file()}
+                        for p in sorted(external)])
     for p in r["pointers"]:
         if not p["exists"]:
             r["problems"].append(("spec", f"SKILL.md points at {p['path']} which does not exist"))
