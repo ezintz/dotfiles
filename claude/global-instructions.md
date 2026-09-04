@@ -24,6 +24,12 @@ machine, and three of its settings fail in the direction that looks like success
 signature or control flow — a comment narrating an assignment, a loop or an obvious early return is
 deleted on sight, including one already in the file.
 
+**Never point a comment at a plan doc, design doc, or issue/ticket by name or number.** Write the
+reasoning itself into the comment. Plans and requirements are not written in stone — they get
+superseded, merged, renamed or deleted once implemented, and a comment that only says "see
+docs/foo-plan.md §2c" has zero content once foo-plan.md is gone. One mediaplayer session left
+~90 such dangling pointers across `src/` and `tests/` after two finished plans were deleted.
+
 **Every fact gets exactly one home**, because a second copy is billed on every edit that loads both:
 
 - **A code comment — the default.** Anything anchored to one enforcement point: the measurement, the
