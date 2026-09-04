@@ -48,6 +48,10 @@ mis-configured, so check these before reinstalling anything:
 - **`~/.dotnet/tools` is not on PATH.** `dotnet tool install -g <tool>` reports
   success, then the tool is "command not found". Export
   `PATH="$PATH:$HOME/.dotnet/tools"` in the same call that uses it.
+- **`strings` finds no managed string in a .NET assembly.** They are stored
+  UTF-16LE, so an ASCII scan reports nothing — which reads as "this code was
+  never packaged" rather than "wrong tool". Search the raw bytes for the encoded
+  form instead: `s.encode("utf-16-le") in open(dll, "rb").read()`.
 - **`DOTNET_ROOT` is unset**, so anything that starts the runtime *without*
   going through the `dotnet` CLI fails with "You must install .NET" even though
   `dotnet` itself works. That covers global tools and, just as often, a built
