@@ -4,24 +4,9 @@ input=$(cat)
 model=$(echo "$input"       | jq -r '.model.display_name // "Unknown"')
 used=$(echo "$input"        | jq -r '.context_window.used_percentage // empty')
 worktree=$(echo "$input"    | jq -r '.worktree.name // empty')
-session_cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
 current_dir=$(echo "$input" | jq -r '.workspace.current_dir // .worktree.original_cwd // empty')
 effort=$(echo "$input"      | jq -r '.effort.level // empty')
 session_id=$(echo "$input"  | jq -r '.session_id // "default"')
-# ── Accumulated total cost across sessions ───────────────────────────────────
-COST_SESSION_FILE="${HOME}/.claude/session-cost-${session_id}"
-TOTAL_COST_FILE="${HOME}/.claude/accumulated_cost.txt"
-
-if [ -n "$session_cost" ]; then
-  prev_session_cost=$(cat "$COST_SESSION_FILE" 2>/dev/null || echo "0")
-  delta=$(awk "BEGIN { d = $session_cost - $prev_session_cost; print (d > 0) ? d : 0 }")
-  echo "$session_cost" > "$COST_SESSION_FILE"
-  if awk "BEGIN { exit ($delta <= 0) }"; then
-    prev_total=$(cat "$TOTAL_COST_FILE" 2>/dev/null || echo "0")
-    awk "BEGIN { printf \"%.6f\n\", $prev_total + $delta }" > "$TOTAL_COST_FILE"
-  fi
-fi
-total_cost=$(cat "$TOTAL_COST_FILE" 2>/dev/null || echo "0")
 
 rl_5h_pct=$(echo "$input"   | jq -r '.rate_limits.five_hour.used_percentage // empty')
 rl_5h_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
@@ -69,11 +54,6 @@ elapsed_str() {
   elif [ "$h" -gt 0 ]; then printf "%dh %dm" "$h" "$m"
   else printf "%dm" "$m"
   fi
-}
-
-# Format cost as $X.XX
-fmt_cost() {
-  [ -n "$1" ] && awk "BEGIN { printf \"\$%.2f\", $1 }" || printf '$0.00'
 }
 
 # Effort label with color
@@ -187,41 +167,46 @@ fi
 [ "$git_unmerged" -gt 0 ]   2>/dev/null && git_str="${git_str} ${YELLOW}${BOLD}═${git_unmerged}${RESET}"
 [ "$git_untracked" -gt 0 ]  2>/dev/null && git_str="${git_str} ${WHITE}${BOLD}◼${git_untracked}${RESET}"
 
-# ── Line 1: 📁 dir | 🌿 git | [🌳 worktree |] 🤖 model | ⚡ effort | 🧠 context% ──
+# ── Line 1: 📁 dir ┃ 🌿 git ┃ [🌳 worktree ┃] 🤖 model ┃ ⚡ effort ┃ 🧠 context% ──
 
 repo_root=$(git -C "$ref_dir" rev-parse --show-toplevel 2>/dev/null || echo "$ref_dir")
 dir_display=$(basename "${repo_root:-$ref_dir}")
 
 line1="📁 ${dir_display}"
-[ -n "$git_str" ]  && line1="${line1} | 🌿 ${git_str}"
-[ -n "$worktree" ] && line1="${line1} | 🌳 ${worktree}"
-line1="${line1} | 🤖 ${model}"
-[ -n "$effort" ]   && line1="${line1} | $(effort_label "$effort")"
+[ -n "$git_str" ]  && line1="${line1} ┃ 🌿 ${git_str}"
+[ -n "$worktree" ] && line1="${line1} ┃ 🌳 ${worktree}"
+line1="${line1} ┃ 🤖 ${model}"
+[ -n "$effort" ]   && line1="${line1} ┃ $(effort_label "$effort")"
 
 used_int=$(printf "%.0f" "${used:-0}" 2>/dev/null || echo 0)
 mem_color=$(color_for_pct "$used_int")
-line1="${line1} | 🧠 ${mem_color}${used_int}%${RESET}"
+line1="${line1} ┃ 🧠 ${mem_color}${used_int}%${RESET}"
 
-# ── Line 2: 5h bar ↻ elapsed (💰 $cost) ────────────────────────────────────
+# ── Line 2: 5h bar ↻ elapsed ┃ 7d bar ↻ elapsed ───────────────────────────
 
-line2=""
+seg_5h=""
 if [ -n "$rl_5h_pct" ] && [ -n "$rl_5h_reset" ]; then
   c=$(color_for_pct "$rl_5h_pct")
   bar=$(make_bar "$rl_5h_pct")
   pct_int=$(printf "%.0f" "$rl_5h_pct")
   elapsed=$(elapsed_str "$rl_5h_reset")
-  line2="${c}${bar} ${pct_int}%${RESET} ↻ ${elapsed} (💰 $(fmt_cost "$session_cost"))"
+  seg_5h="5h ${c}${bar} ${pct_int}%${RESET} ↻ ${elapsed}"
 fi
 
-# ── Line 3: 7d bar ↻ elapsed (💰 $total) ────────────────────────────────────
-
-line3=""
+seg_7d=""
 if [ -n "$rl_7d_pct" ] && [ -n "$rl_7d_reset" ]; then
   c=$(color_for_pct "$rl_7d_pct")
   bar=$(make_bar "$rl_7d_pct")
   pct_int=$(printf "%.0f" "$rl_7d_pct")
   elapsed=$(elapsed_str "$rl_7d_reset")
-  line3="${c}${bar} ${pct_int}%${RESET} ↻ ${elapsed} (💰 $(fmt_cost "$total_cost"))"
+  seg_7d="7d ${c}${bar} ${pct_int}%${RESET} ↻ ${elapsed}"
 fi
 
-printf "%s\n%s\n%s\n" "$line1" "$line2" "$line3"
+line2="$seg_5h"
+if [ -n "$seg_5h" ] && [ -n "$seg_7d" ]; then
+  line2="${seg_5h} ┃ ${seg_7d}"
+elif [ -n "$seg_7d" ]; then
+  line2="$seg_7d"
+fi
+
+printf "%s\n%s\n" "$line1" "$line2"
