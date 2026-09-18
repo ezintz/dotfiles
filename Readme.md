@@ -30,10 +30,10 @@ command from anywhere. It syncs the repository, installs/updates packages, creat
 the symlinks, and applies the macOS configuration.
 
 ```sh
-dotfiles --no-configuration \ # Do not apply any configuration
-  --no-packages \ # Do not install/update packages
-  --no-sync \ # Do not sync with repository
-  --no-links # Do not create symbolic links
+dotfiles --no-packages \     # Do not install/update packages
+  --no-sync \              # Do not sync with repository
+  --no-links \             # Do not create symbolic links or set the Git identity
+  --no-configuration        # Do not apply macOS defaults
 ```
 
 _Note: To be able to run the synchronization you should commit the changes that you make._

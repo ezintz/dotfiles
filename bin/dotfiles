@@ -333,8 +333,8 @@ else
   print_success "... done!"
 fi
 
-if [ $no_configuration ]; then
-  print_notice "Skipped dotfiles setup."
+if [ $no_links ]; then
+  print_notice "Skipped mirroring dotfiles."
 else
   print_header "Setting up dotfiles"
   seek_confirmation "This step may overwrite existing dotfiles."
@@ -347,18 +347,22 @@ else
     print_notice "Skipped mirroring dotfiles."
   fi
 
-  if is_macos; then
-    print_header "OS X settings update"
-    seek_confirmation "Warning: This step may overwrite your OS X settings."
-    if is_confirmed; then
-      print_notice "Updating settings ..."
-      source bin/_macos
-      print_success "... done!"
-      print_notice "Note that some of these changes require a logout/restart to take effect."
-    else
-      print_notice "Skipped OS X settings update."
-    fi
-  fi
-
+  ## ~/.gitauthor is the identity the linked gitconfig includes, so it belongs
+  ## with the links rather than with the macOS defaults.
   setup_git
+fi
+
+if [ $no_configuration ]; then
+  print_notice "Skipped OS X settings update."
+elif is_macos; then
+  print_header "OS X settings update"
+  seek_confirmation "Warning: This step may overwrite your OS X settings."
+  if is_confirmed; then
+    print_notice "Updating settings ..."
+    source bin/_macos
+    print_success "... done!"
+    print_notice "Note that some of these changes require a logout/restart to take effect."
+  else
+    print_notice "Skipped OS X settings update."
+  fi
 fi

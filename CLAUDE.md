@@ -13,9 +13,9 @@ A macOS dotfiles repository that manages shell configuration (Zsh/Prezto), Git, 
 bin/dotfiles
 
 # Skip specific phases
-bin/dotfiles --no-packages   # skip Homebrew/npm installs
-bin/dotfiles --no-sync       # skip git pull
-bin/dotfiles --no-links      # skip symlink creation
+bin/dotfiles --no-packages       # skip Homebrew/npm installs
+bin/dotfiles --no-sync           # skip git pull
+bin/dotfiles --no-links          # skip symlinks and the git identity prompt
 bin/dotfiles --no-configuration  # skip macOS defaults
 ```
 
