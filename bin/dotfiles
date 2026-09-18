@@ -194,6 +194,14 @@ function mirror_files {
   mkdir -p "${HOME}/.tmux"
   link "tmux/plugins" ".tmux/plugins"
 
+  ## cmux embeds libghostty and exposes no cursor/font settings of its own, so
+  ## this file is cmux's terminal config as much as Ghostty's. Linked per-file,
+  ## not as a directory: `link` does a bare `ln -fs`, which would drop a symlink
+  ## *inside* an existing ~/.config/ghostty instead of replacing it.
+  mkdir -p "${HOME}/.config/ghostty"
+  link "ghostty/config" ".config/ghostty/config"
+  link "ghostty/passthrough.glsl" ".config/ghostty/passthrough.glsl"
+
   mkdir -p "${HOME}/.claude/hooks"
   ## Named differently from the symlink target so Claude Code's in-repo
   ## CLAUDE.md auto-discovery doesn't also load it a second time as a

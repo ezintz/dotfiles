@@ -58,8 +58,12 @@ setup symlinks them into `~` rather than copying them.
   setup: instructions, skills, agents, rules, settings, and a `PreToolUse` env
   guard that makes destructive commands aimed at a non-local target ask first.
   The details live in [CLAUDE.md](CLAUDE.md).
-- **`iterm2/`** — the iTerm2 preferences plist and the OneDark color scheme. These
-  are not applied by `bin/dotfiles`; import them manually in iTerm2's preferences.
+- **`iterm2/`** — the iTerm2 preferences plist and the OneDark color scheme. Not
+  symlinked: `bin/_macos` instead points iTerm2's "load preferences from a custom
+  folder" at this directory, so iTerm2 reads *and writes back* the tracked plist.
+- **`ghostty/`** — the terminal config [cmux](https://cmux.com) renders with, since
+  cmux embeds libghostty and exposes no font or cursor settings of its own. The
+  `custom-shader` is a no-op that exists only to make `background-opacity` work.
 - **`bin/_macos`** — a default set of settings for macOS (Dock, Finder, Safari and
   friends), gratuitously stolen from [@mathiasbynens](https://mths.be/dotfiles) and
   customized to my needs.
