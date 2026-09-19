@@ -429,16 +429,38 @@
   //     }
   //   },
 
+  // OneDark (the same palette as ghostty/config and iterm2/OneDark.itermcolors)
+  // for the app chrome around the terminal. Unset, cmux uses its own blues.
+
+  "paneBorderColor" : "#181A1F",
+  "activePaneBorderColor" : "#C678DD",
+
+  "sidebarAppearance" : {
+    "matchTerminalBackground" : true
+  },
+
   "workspaceColors" : {
-    // The selected workspace in the sidebar, otherwise cmux's own built-in blue
-    // (it ignores the macOS accent colour).
-    // OneDark purple, matching the macOS accent colour.
-    "selectionColor" : "#C678DD"
+    // Purple doubles as the macOS accent colour on this machine.
+    "selectionColor" : "#C678DD",
+    "notificationBadgeColor" : "#E06C75",
+    // Replaces cmux's whole picker, not just these names.
+    "colors" : {
+      "Red" : "#E06C75",
+      "Orange" : "#D19A66",
+      "Yellow" : "#E5C07B",
+      "Green" : "#98C379",
+      "Cyan" : "#56B6C2",
+      "Blue" : "#61AFEF",
+      "Purple" : "#C678DD",
+      "Grey" : "#5C6370"
+    }
   },
 
   "notifications" : {
-    // The blue border that flashes around a pane when it takes focus.
-    "paneFlash" : false
+    // The border that flashes around a pane when it takes focus.
+    "paneFlash" : false,
+    // Also colours the ring around panes with unread notifications.
+    "paneFlashColor" : "#C678DD"
   },
 
   "shortcuts" : {
