@@ -200,7 +200,6 @@ function mirror_files {
   ## *inside* an existing ~/.config/ghostty instead of replacing it.
   mkdir -p "${HOME}/.config/ghostty"
   link "ghostty/config" ".config/ghostty/config"
-  link "ghostty/passthrough.glsl" ".config/ghostty/passthrough.glsl"
   mkdir -p "${HOME}/.config/cmux"
   link "cmux/cmux.json" ".config/cmux/cmux.json"
 

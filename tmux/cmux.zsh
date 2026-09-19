@@ -61,9 +61,15 @@
   ## cmux itself loads it (sidebar directory, branch, ports); inside tmux that
   ## integration reads the workspace from the session environment. Re-set on
   ## every attach, since the socket and port change when cmux restarts.
-  local -a cmux_env=(ZDOTDIR="$CMUX_SHELL_INTEGRATION_DIR" GHOSTTY_SURFACE_ID="$GHOSTTY_SURFACE_ID")
+  ## GHOSTTY_* travels too: without GHOSTTY_SHELL_FEATURES, Ghostty's integration
+  ## loads inside tmux but sets no titles, and every tab reads "Terminal".
+  local -a cmux_env=(ZDOTDIR="$CMUX_SHELL_INTEGRATION_DIR")
   local key
-  for key in ${(k)parameters[(I)CMUX_*]}; do
+  ## CMUX_ZSH_* is one-shot bootstrap state for this outer shell: carried into
+  ## tmux, CMUX_ZSH_RESTORE_TERM made every inner shell reset TERM from
+  ## tmux-256color to xterm-256color at its first prompt.
+  for key in ${(k)parameters[(I)CMUX_*]} ${(k)parameters[(I)GHOSTTY_*]}; do
+    [[ $key == CMUX_ZSH_* ]] && continue
     [[ ${parameters[$key]} == *export* ]] && cmux_env+=("$key=${(P)key}")
   done
   local -a env_args=()
@@ -94,9 +100,25 @@
       done
   ) &!
 
-  ## The status line duplicates cmux's own tab bar. Exiting the shell or
-  ## detaching ends the tmux client with 0 and closes the tab; if tmux fails to
-  ## start at all, fall through to an ordinary shell rather than a dead tab.
-  command tmux attach-session -t "=$session" \; set-option status off && exit
+  ## cmux restores a tab by writing `cmux restore --surface` into it as typed
+  ## input, before this shell even starts. That command cannot reattach tmux
+  ## ("nothing to restore"), and once this shell attaches, the text is passed
+  ## into the tmux pane -- into a running Claude's prompt. So take whatever is
+  ## already waiting (-t 0 never blocks): drop a cmux restore line, and hand
+  ## anything else (e.g. a command cmux was asked to run in a new tab) to the
+  ## session, where it would have gone had tmux been there first.
+  local pending='' ch
+  while read -t 0 -k 1 -r ch 2>/dev/null; do pending+=$ch; done
+  local line
+  for line in "${(@f)pending}"; do
+    [[ -z $line || $line == *cmux\ restore* ]] && continue
+    command tmux send-keys -t "=$session:" -l -- "$line"
+    command tmux send-keys -t "=$session:" Enter
+  done
+
+  ## Exiting the shell or detaching ends the tmux client with 0 and closes the
+  ## tab; if tmux fails to start at all, fall through to an ordinary shell
+  ## rather than a dead tab.
+  command tmux attach-session -t "=$session" && exit
   print -u2 "cmux.zsh: tmux failed, continuing with a plain shell"
 }

@@ -1,16 +1,16 @@
-# Font (matches iTerm's Default profile)
-font-family = "JetBrains Mono"
+# Font. The Nerd Font build, not plain "JetBrains Mono": neither has the
+# symbols in Claude Code's status line (▰ ▱ ◼ ✚ ⬆ …), and with the plain one
+# Ghostty borrowed them from Apple Symbols enlarged 1.4x to match its x-height,
+# drawing each two cells wide over the next character. Compared on screen after
+# a full cmux restart, the Nerd Font build keeps them inside their cell.
+font-family = "JetBrainsMono Nerd Font"
 font-size = 13
 
-# Transparency
-# cmux's default (non-shader) render path ignores background-opacity for the
-# terminal pane itself (only the tab bar picks it up). Enabling any custom
-# shader — even this no-op passthrough — switches libghostty to a
-# post-processing pipeline that preserves alpha, which makes opacity work.
-# See: https://github.com/manaflow-ai/cmux/issues/879
+# Transparency. cmux once applied background-opacity only while a custom-shader
+# was set (a no-op passthrough shader was the workaround, cmux issue #879); it
+# no longer needs one.
 background-opacity = 0.85
 background-blur-radius = 20
-custom-shader = ~/.config/ghostty/passthrough.glsl
 
 # OneDark colors (ported from ~/.dotfiles/iterm2/OneDark.itermcolors)
 background = #21252B
@@ -49,3 +49,9 @@ cursor-style-blink = true
 # default before each external command, so it overrides cursor-style on every
 # keystroke. Turning that one feature off leaves path and title reporting intact.
 shell-integration-features = no-cursor
+
+# Cmd+K. Ghostty's own clear_screen does nothing while the pane is on the
+# alternate screen, and every cmux tab runs tmux (tmux/cmux.zsh), which lives
+# there -- so the key did nothing at all. Send a key tmux knows instead
+# (user-keys in tmux/tmux.conf), where it clears the pane and its history.
+keybind = super+k=csi:99~

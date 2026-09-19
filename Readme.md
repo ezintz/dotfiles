@@ -64,8 +64,7 @@ setup symlinks them into `~` rather than copying them.
   symlinked: `bin/_macos` instead points iTerm2's "load preferences from a custom
   folder" at this directory, so iTerm2 reads *and writes back* the tracked plist.
 - **`ghostty/`** — the terminal config [cmux](https://cmux.com) renders with, since
-  cmux embeds libghostty and exposes no font or cursor settings of its own. The
-  `custom-shader` is a no-op that exists only to make `background-opacity` work.
+  cmux embeds libghostty and exposes no font or cursor settings of its own.
 - **`cmux/`** — cmux's own settings (shortcuts, sidebar colours, notifications),
   as opposed to how its terminal panes render.
 - **`bin/_macos`** — a default set of settings for macOS (Dock, Finder, Safari and
