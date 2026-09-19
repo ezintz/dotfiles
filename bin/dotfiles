@@ -327,6 +327,9 @@ else
   git pull --rebase origin main
   ## Sync submodules.
   git submodule sync --recursive
+  ## Only the plugin: a blanket `update` would detach prezto from its branch
+  ## whenever it carries commits the superproject has not recorded yet.
+  git submodule update --init tmux/plugins/tmux-resurrect
   ## Pull private overlay if it exists as a git repo.
   if [[ -d "${DOTFILES_LOCAL_DIRECTORY}/.git" ]]; then
     print_notice "Syncing private dotfiles overlay ..."

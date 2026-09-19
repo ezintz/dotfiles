@@ -59,7 +59,7 @@ An optional private overlay directory, `~/.dotfiles-private` (a separate, non-tr
 `prezto/` is a git submodule pointing to a custom fork (`github.com/ezintz/prezto`). Runtime configs live in `prezto/runcoms/`:
 - `zpreztorc` — which Prezto modules are loaded (the main file to edit for shell behavior)
 - `zprofile` — PATH, environment variables, tool integrations (OrbStack, krew, kubeconfig)
-- `zshrc` — minimal, just sources Prezto init
+- `zshrc` — minimal: sources `tmux/cmux.zsh` from this repo (a no-op outside cmux), then Prezto init
 
 `~/.zprofile.local` is sourced at the end of `zprofile` if it exists — use it for machine-specific env vars that should not be tracked in this repo.
 
@@ -74,9 +74,7 @@ An optional private overlay directory, `~/.dotfiles-private` (a separate, non-tr
 ### Git Submodules
 
 - `prezto` — Zsh framework (custom fork)
-- `tmux/plugins/tpm` — Tmux Plugin Manager
-- `tmux/plugins/tmux-sensible`
-- `tmux/plugins/tmux-yank`
+- `tmux/plugins/tmux-resurrect` — saves and restores tmux sessions across reboots; loaded directly by `tmux.conf`, there is no plugin manager
 
 After cloning, run `git submodule update --init --recursive`.
 
@@ -86,7 +84,7 @@ After cloning, run `git submodule update --init --recursive`.
 - `bootstrap.sh` — standalone installer for machines without this repo cloned (`curl -fsSL .../claude/bootstrap.sh | sh`); installs global instructions plus the env-guard hook and registers it in `~/.claude/settings.json`. Safe to re-run. It fetches over HTTP and so cannot glob a remote directory or read the repo: its `PROFILES` list must be updated by hand when a guard profile is added, and its `ask_rules` list when a wrapper is added to `settings.json`. Both merges are additive — a hook, plugin or ask rule the user added by hand is never dropped.
 - `global-instructions.md` → symlinked to `~/.claude/CLAUDE.md`. It is named differently in-repo on purpose, so Claude Code's auto-discovery doesn't also load it a second time as a project file when working inside this dotfiles repo. **It costs context in every session of every repo**, so it holds only things that change how Claude behaves *anywhere* — command discipline, tool usage. How something here is built, tested or extended is maintenance knowledge and belongs in this file instead; it is loaded automatically whenever the work is actually happening in this repo. When in doubt: would this help in an unrelated repo six months from now? If not, it goes here.
 - `hooks/` — the PreToolUse env guard: destructive commands aimed at a non-local target get `permissionDecision: "ask"` instead of running under the ambient permission mode.
-  - `env-guard.sh` is the **only** registered hook. It reads the tool JSON once and dispatches to every profile in `hooks/guards/*.guard`. One process per Bash call instead of one per guarded tool (~13ms vs ~141ms when nothing matches).
+  - `env-guard.sh` is the **only** registered `PreToolUse` hook. (`SessionStart`/`SessionEnd` run `tmux/claude-session.sh`, which has nothing to do with guarding — see Terminals.) It reads the tool JSON once and dispatches to every profile in `hooks/guards/*.guard`. One process per Bash call instead of one per guarded tool (~13ms vs ~141ms when nothing matches).
   - `guard-lib.sh` holds the command-line parsing — segmentation, wrapper/`eval` detection, exact-token subcommand matching, flag-value skipping. This is the part that keeps `helm template test chart` from reading as `helm test`.
   - **Writing ≠ executing.** Heredoc bodies are stripped before classification (`guard_strip_heredocs`), so `cat > runbook.md <<EOF … kubectl --context production delete … EOF` documents a command without prompting. The line that *opens* the heredoc is kept, because `kubectl apply -f - <<EOF` really does apply. Conversely `guard_script_bodies` reads the contents of scripts the command executes (`bash deploy.sh`, `./deploy.sh`, `source x.sh`) — one level deep, bounded to 4 files × 64 KiB — so a destructive command is caught when it runs from a file, not when it is written to one. `guard_make_recipes` does the same for `make <target>`: it reads the target's recipe out of the Makefile and classifies *that*, so `make test` that deletes a namespace asks and `make deploy` that only rsyncs does not. Bounded to 4 targets, one level deep, with no variable expansion — a recipe of `$(KUBECTL) delete` is not seen, which is what the `make` entries in `settings.json` `permissions.ask` back up.
   - Keep `guard_tokenize` fork-free. It runs for every segment of every command times every profile; forking `printf | tr` per token there cost ~8ms per call on its own.
@@ -161,6 +159,8 @@ Two terminal apps are configured here, by two different mechanisms:
 
 - `iterm2/` holds the preferences plist and the OneDark color scheme. `bin/_macos` sets `LoadPrefsFromCustomFolder` and points `PrefsCustomFolder` at this directory, so iTerm2 reads the tracked plist at launch **and writes back into it** — changes made in the preferences GUI land in the working tree, mixed in with keys iTerm2 maintains on its own (saved prompts, workgroups). Expect unrelated churn when diffing it.
 - `ghostty/` holds the config cmux renders with. cmux is a native app embedding libghostty and deliberately surfaces no font or cursor settings of its own, so everything about how a cmux pane looks is in `ghostty/config`; cmux's own settings are in `cmux/cmux.json` (JSONC, validated by the `$schema` it names) and cover only app behaviour: shortcuts, sidebar colours, notifications. Unlike the iTerm2 plist both are symlinked (per file, from `bin/dotfiles`), so cmux's "Open Ghostty Settings" command edits the repo copy directly. Most of `cmux.json` is the commented-out template cmux generates listing every setting with its default; only the uncommented blocks at the bottom are live.
+
+Every cmux tab runs inside its own tmux session, so shells and whatever runs in them (Claude Code included) survive cmux quitting, and tmux-resurrect brings them back after a reboot. `tmux/cmux.zsh`, sourced from the top of the prezto `zshrc`, does it; its comments carry the reasons. Claude Code comes back as the exact conversation, not the newest one in the directory: `tmux/claude-session.sh`, run from Claude's `SessionStart`/`SessionEnd` hooks and resurrect's save/restore hooks, keeps the conversation id per pane. Two settings elsewhere depend on this: `terminal.autoResumeAgentSessions` stays `false` in `cmux/cmux.json`, or cmux would start a second Claude next to the one tmux kept alive, and `tmux.conf` saves on a timer and on detach instead of using tmux-continuum, whose status-line trigger never fires with the status line off. To test a change to `cmux.zsh` without quitting cmux, open a throwaway workspace (`cmux new-workspace --focus false`, then `cmux select-workspace` it once — terminals in a workspace nobody has shown do not start) and inspect `tmux ls`.
 
 The cursor is a blinking underscore, and four surfaces have to agree for that to hold, because each can override the one before it: the iTerm2 profiles (`Cursor Type = 0`, `Blinking Cursor`), `ghostty/config`, `tmux/tmux.conf`, and Claude Code's `env` block above. Ghostty's shell integration is the non-obvious one — left enabled it re-emits a DECSCUSR blinking bar at every prompt redraw, which is why `ghostty/config` disables just that feature.
 

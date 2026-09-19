@@ -52,8 +52,10 @@ setup symlinks them into `~` rather than copying them.
   interactively on first setup.
 - **`ssh/`** — a `config` that includes everything in `~/.ssh/config.d/`, so
   per-host configs can be added (and selectively committed) under `ssh/config.d/`.
-- **`tmux/`** — `tmux.conf` plus [tpm](https://github.com/tmux-plugins/tpm),
-  tmux-sensible and tmux-yank as submodules.
+- **`tmux/`** — `tmux.conf`, [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect)
+  as a submodule, and `cmux.zsh`, which runs every cmux tab inside its own tmux
+  session so shells survive cmux restarts and reboots, with Claude Code resuming
+  the same conversation it was in.
 - **`claude/`** — the global (`~/.claude/`) [Claude Code](https://claude.ai/code)
   setup: instructions, skills, agents, rules, settings, and a `PreToolUse` env
   guard that makes destructive commands aimed at a non-local target ask first.

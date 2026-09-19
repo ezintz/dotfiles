@@ -456,6 +456,30 @@
     }
   },
 
+  // cmux has no fixed row height for the sidebar: a workspace row grows and
+  // shrinks with the detail lines under its title. These are the ones that
+  // change while you work; branch, directory and PR lines stay, since they
+  // only change when the workspace changes repo.
+  "sidebar" : {
+    // The latest notification text, up to 12 lines by default.
+    "showNotificationMessage" : false,
+    "showLog" : false,
+    "showProgress" : false,
+    "showPorts" : false
+  },
+
+  "app" : {
+    // Otherwise a workspace with a new notification moves toward the top.
+    "reorderOnNotification" : false
+  },
+
+  "terminal" : {
+    // Terminals run inside tmux (tmux/cmux.zsh), where Claude Code keeps running
+    // across a cmux restart. cmux's resume would type `claude --resume` into the
+    // reattached tab and start a second copy next to it.
+    "autoResumeAgentSessions" : false
+  },
+
   "notifications" : {
     // The border that flashes around a pane when it takes focus.
     "paneFlash" : false,
