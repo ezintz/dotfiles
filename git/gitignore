@@ -126,3 +126,10 @@ svn-commit.*
 ## tracked settings.json).
 **/.claude/.cc-writes/
 **/.claude/settings.local.json
+
+## CodeGraphContext's per-repo index, written into whatever repo it is pointed
+## at. db/ is a live FalkorDB store, config.yaml is machine-local, and .env has
+## a CGC_API_KEY slot that is empty today but would be a committed credential
+## the moment the HTTP gateway is turned on -- so ignore the directory whole
+## rather than relying on the bare `.env` rule above to cover the one file.
+.codegraphcontext/
