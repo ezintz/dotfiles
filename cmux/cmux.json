@@ -494,7 +494,11 @@
       "prevSurface" : "cmd+←",
       "nextSurface" : "cmd+→",
       "simulatorRotateLeft" : "",
-      "simulatorRotateRight" : ""
+      "simulatorRotateRight" : "",
+      // ⇧⌘←/⇧⌘→ move the current tab one place left/right, pairing with the
+      // switch above. No cmux default uses them.
+      "moveSurfaceLeft" : "cmd+shift+←",
+      "moveSurfaceRight" : "cmd+shift+→"
     }
   }
 }
