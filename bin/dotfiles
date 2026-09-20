@@ -200,8 +200,13 @@ function mirror_files {
   ## *inside* an existing ~/.config/ghostty instead of replacing it.
   mkdir -p "${HOME}/.config/ghostty"
   link "ghostty/config" ".config/ghostty/config"
+  link "ghostty/passthrough.glsl" ".config/ghostty/passthrough.glsl"
   mkdir -p "${HOME}/.config/cmux"
   link "cmux/cmux.json" ".config/cmux/cmux.json"
+  ## login(1) prints "Last login: …" before the shell starts. In cmux that line
+  ## is drawn and then replaced by the tmux screen tmux/cmux.zsh attaches, so
+  ## every new tab visibly loads twice. The file's existence alone silences it.
+  touch "${HOME}/.hushlogin"
 
   mkdir -p "${HOME}/.claude/hooks"
   ## Named differently from the symlink target so Claude Code's in-repo
@@ -256,6 +261,15 @@ function mirror_files {
   for ref_file in "${DOTFILES_DIRECTORY}"/claude/refs/*.md(N); do
     local ref_name="$(basename "${ref_file}")"
     link "claude/refs/${ref_name}" ".claude/refs/${ref_name}"
+  done
+
+  ## Claude Code's `/theme` editor rewrites a theme by renaming a temp file over
+  ## it, which replaces the symlink with a regular file -- so a theme tweaked in
+  ## the UI detaches from this repo until the next run re-links it.
+  mkdir -p "${HOME}/.claude/themes"
+  for theme_file in "${DOTFILES_DIRECTORY}"/claude/themes/*.json(N); do
+    local theme_name="$(basename "${theme_file}")"
+    link "claude/themes/${theme_name}" ".claude/themes/${theme_name}"
   done
 
   ## Do not create a link for the `.zshrc` since it might contain local configuration.

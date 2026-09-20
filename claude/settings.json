@@ -19,17 +19,17 @@
   },
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
+    "playwright@claude-plugins-official": false,
     "claude-md-management@claude-plugins-official": true,
-    "feature-dev@claude-plugins-official": true,
-    "security-guidance@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": false,
+    "security-guidance@claude-plugins-official": false,
     "typescript-lsp@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
-    "commit-commands@claude-plugins-official": true,
-    "pr-review-toolkit@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": false,
+    "pr-review-toolkit@claude-plugins-official": false,
     "chrome-devtools-mcp@claude-plugins-official": true,
-    "plugin-dev@claude-plugins-official": true,
-    "hookify@claude-plugins-official": true
+    "plugin-dev@claude-plugins-official": false,
+    "hookify@claude-plugins-official": false
   },
   "hooks": {
     "PreToolUse": [
@@ -73,8 +73,8 @@
     "command": "sh ~/.claude/statusline-command.sh"
   },
   "attribution": {
-    "commit": "Co-authored by Claude Code \ud83e\udd16",
-    "pr": "Co-authored by Claude Code \ud83e\udd16",
+    "commit": "Co-authored by Claude Code 🤖",
+    "pr": "Co-authored by Claude Code 🤖",
     "sessionUrl": false
   },
   "includeCoAuthoredBy": false,
@@ -83,9 +83,10 @@
   "skipDangerousModePermissionPrompt": true,
   "remoteControlAtStartup": true,
   "skipAutoPermissionPrompt": true,
-  "theme": "dark-ansi",
+  "theme": "custom:onedark",
   "tui": "fullscreen",
   "env": {
-    "CLAUDE_CODE_NATIVE_CURSOR": "1"
+    "CLAUDE_CODE_NATIVE_CURSOR": "1",
+    "CLAUDE_CODE_TMUX_TRUECOLOR": "1"
   }
 }
