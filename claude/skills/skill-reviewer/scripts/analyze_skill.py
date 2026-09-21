@@ -178,7 +178,16 @@ def analyze(skill_dir):
                     r["hygiene"].append({"file": f["path"], "line": i, "kind": label,
                                          "text": line.strip()[:100]})
 
-    r["links"] = sorted(set(re.findall(r"https?://[^\s)>\]\"']+", text)))
+    # Backticks terminate a URL: skills routinely write links inside code spans,
+    # and swallowing the closing backtick turns every one into a fake dead link.
+    raw = re.findall(r"https?://[^\s)>\]\"'`]+", text)
+    links = set()
+    for url in raw:
+        url = url.rstrip(".,;:")  # trailing sentence punctuation, not part of the URL
+        if "<" in url or "{" in url:
+            continue  # a template like .../create/{REQUEST_TYPE_ID}, not a link to fetch
+        links.add(url)
+    r["links"] = sorted(links)
     return r
 
 
