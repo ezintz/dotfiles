@@ -144,35 +144,44 @@ each overlapping set and whether the rules actually disagree.
 Also check for the same instruction stated in two rule files, and for a rule
 restating something already in CLAUDE.md.
 
-### 7. Verifiability
+### 7. Verifiability — can a reader act on this?
 
 Instructions must be concrete enough to check. Prefer "run `npm test` before
 committing" over "test your changes"; "use 2-space indentation" over "format
 code properly". Vague guidance costs tokens and changes nothing.
 
+The same test catches the other way an instruction becomes unactionable: a rule
+written straight out of the session that motivated it keeps that session's
+context. "Use the wrapper we added", "as discussed above", a bare commit or
+date, an internal name never glossed, a host or repo that was one run's
+particulars — each names nothing to a reader who was not there, and a rule is
+read cold on every matching edit forever after. The analyser flags the
+phrasings; the unglossed name and the one-repo assumption only show up on
+reading. This is a rewrite, not a cut: keep the invariant, drop the pointer to
+where it came from, and state the name — "Supercharger (the batch-import
+path)".
+
 ### 8. Placement — should this be a rule at all?
 
-| Content | Belongs in |
-| --- | --- |
-| Applies everywhere, every session, short | `CLAUDE.md` |
-| Applies to a subset of files | rule with `paths` |
-| A multi-step procedure, or task-triggered | a skill |
-| Must hold regardless of Claude's judgement | a PreToolUse hook |
-| Derivable from the codebase | nowhere — delete it |
-| Background depth behind a fact the rule keeps | `docs/`, linked from the rule |
+A rule earns its place by being an invariant across several files that no
+single comment owns. Report anything that fails that test with where it goes
+instead; if the destination is unclear, or the question is repo level versus
+user level, `../../refs/knowledge-placement.md` has both tables. The two
+failures worth naming explicitly:
 
-The `docs/` row is narrow on purpose. It holds the long incident writeup once
-the rule states the conclusion — not the conclusion itself.
-
-Flag any path-scoped rule carrying a hard constraint. Because path-scoped rules
-vanish after `/compact` until a matching file is read again, a "never do X" rule
-is unreliable in that position — promote it to CLAUDE.md, or enforce it in a hook.
+- A hard prohibition in a path-scoped rule. Path-scoped rules vanish after
+  `/compact` until a matching file is read again, so promote it to CLAUDE.md or
+  enforce it in a hook.
+- A rule restating what a code comment in its own `paths:` already says. Run
+  `scripts/comment-inventory.py <repo> --rule <name> --overlap` rather than
+  asserting you checked.
 
 ## Anti-Patterns to Flag
 
 - ❌ Unscoped rule that only applies to part of the repo
 - ❌ Architecture overview, directory tree or dependency list as a rule
 - ❌ Hard prohibition living in a path-scoped rule
+- ❌ Wording that only resolves inside the session the rule came from
 - ❌ `paths` glob that matches no files, or braces that blow the expansion budget
 - ❌ Frontmatter keys other than `paths` (silently ignored)
 - ❌ Two rules with overlapping globs giving conflicting instructions
@@ -257,12 +266,49 @@ Then do the parts that need reading:
    variable name. A **service identifier** (Jira cloud ID, project key, site
    URL) is fine; those are the non-derivable facts rules exist to hold. An
    **absolute path** is a portability bug, not a security one — make it relative.
-8. Read `references/output-format.md` and write the review to that template.
-   Lead with the context budget. Quantify cuts in lines removed from the
-   always-on total, and rescoping and density work in mean rule words per
-   matching edit — those are the numbers the user feels.
+8. Write the review to the template below. Lead with the context budget.
+   Quantify cuts in lines removed from the always-on total, and rescoping and
+   density work in mean rule words per matching edit — those are the numbers
+   the user feels. If a row is hard to place — a cut whose recovery you cannot
+   name, a move that is really a deletion — see
+   `references/writing-findings.md`.
+
+```markdown
+## Rule Review: {{PROJECT}}
+
+### Context budget
+- Always-on: {{N}} lines / ~{{T}} tok ({{K}} unscoped rules + {{M}} CLAUDE.md)
+- Path-scoped: {{N}} lines across {{K}} rules
+- Verdict against the 200-line target
+
+### ✅ Working well
+- [Rules that are correctly scoped, sharp, and non-derivable]
+
+### ⚠️ Issues
+- [Per finding: file, what, why it matters, spec violation vs. judgement call]
+
+### 📋 Cut list
+- [File → sections to remove | reason | **what brings the knowledge back**]
+
+### 🔀 Moves
+- [File → CLAUDE.md / skill / hook / add `paths`, with the reason]
+
+### Metrics
+- Rules reviewed: {{N}} ({{K}} unscoped, {{M}} scoped)
+- Globs matching zero files: {{N}}
+- Overlapping glob sets: {{N}}
+- Conflicts found: {{N}}
+- Hardcoded credentials: Yes/No (should be No)
+- Absolute paths: Yes/No (should be No)
+```
+
+   Take the counts from the analyser rather than recounting by hand, so a second
+   run is comparable to the first.
 
 ## Reference Documentation
+
+- Which destination a fact belongs in, and what each costs:
+  `../../refs/knowledge-placement.md`
 
 - Rules, CLAUDE.md and loading order: https://code.claude.com/docs/en/memory
 - What survives compaction: https://code.claude.com/docs/en/context-window

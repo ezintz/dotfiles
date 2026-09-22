@@ -81,13 +81,39 @@ field makes upload fail with a hard error.
 - Official limit: keep `SKILL.md` under 500 lines
 - Preference: 100-200 lines; question anything past that
 - Skill content stays in context across turns, so every line is a recurring cost
-- Focus on "what Claude needs to execute"; move reference material to a separate
-  file in the skill directory
+- The band is on what *loads*, not on what `SKILL.md` happens to contain. A
+  bundled file the body reads on every run costs the same as the same prose
+  inline, so moving text into `references/` defers nothing unless the read is
+  guarded by a condition — "if the analyser reports X, read Y". An unguarded
+  imperative to read a bundled file buys a tool call and no tokens back. The
+  analyser reports the combined figure as `always-on`; judge against that.
+  (No path is written out in that sentence on purpose: the pointer check would
+  read the example as a reference to a file that does not exist.)
+- Two bills, and the analyser prints both: the listing entry is charged in
+  every session of every project whether the skill runs or not, the body only
+  on activation. A skill nobody triggers still costs its description forever,
+  which is why a fat description is worth more scrutiny than a fat body.
 
 **Progressive disclosure:**
 - Claude sees name + description first
 - Decides relevance before loading full content
-- Only loads what's needed, when needed
+- Only loads what's needed, when needed — which the skill has to earn by
+  guarding its own reads, not by moving text out of the body
+
+**Reads cold:** a skill extracted from the session that motivated it usually
+carries that session with it. The test is whether every instruction can be acted
+on by someone who was not there — no "the wrapper we added", no "as discussed
+above", no name used without saying what it is, and no repo, host, branch or
+error string that was one run's particulars rather than the procedure. The
+analyser flags the phrasings; the unglossed name and the one-repo assumption
+only show up on reading. Report each with the generalisation that fixes it.
+
+**Right destination:** a skill holds the procedure for one task and nothing
+else. Content that belongs in a code comment, a rule, CLAUDE.md or a ref is
+paid for on every turn the skill is open, and is stated twice as soon as it
+also lives where it belongs. Report each such passage with where it goes
+instead; when that is not obvious, `../../refs/knowledge-placement.md` has the
+destination table and what each one costs.
 
 ### 3. Structure Best Practices
 
@@ -115,7 +141,11 @@ field makes upload fail with a hard error.
 - ❌ Side-effecting skill with no `disable-model-invocation: true`
 - ❌ Frontmatter field that blocks packaging, if the skill is meant for claude.ai
 - ❌ Duplicates existing docs (should reference instead)
+- ❌ Carries a fact that belongs in a comment, rule or CLAUDE.md rather than
+  the procedure this skill runs
 - ❌ Development notes in content (timestamps, "validated on...", changelog)
+- ❌ Instructions that only resolve inside the session that produced the skill
+  — a back-reference, an unglossed internal name, one run's repo or host
 - ❌ Mixed language without clear reason
 - ❌ Overly complex (trying to do too much)
 - ❌ Hardcoded credentials (passwords, API keys, tokens, database credentials)
@@ -127,6 +157,8 @@ field makes upload fail with a hard error.
 
 ## Reference Documentation
 
+- Which destination a fact belongs in, and what each costs:
+  `../../refs/knowledge-placement.md`
 - Claude Code frontmatter and behavior: https://code.claude.com/docs/en/skills
 - Agent Skills open standard: https://agentskills.io/specification
 - Spec, template, and examples: https://github.com/anthropics/skills
@@ -167,8 +199,38 @@ Then do the parts that need reading:
    substitution variable used for a runtime path is correct while one written
    out to document its own name is the anti-pattern.
 5. Identify anti-patterns from the list above that no regex can see.
-6. Read `references/output-format.md` and write the review to that template,
-   marking each finding as a spec violation or a preference.
+6. Write the review to the template below, marking each finding as a spec
+   violation or a preference. If a finding is hard to place or phrase, or the
+   split between violation and preference is unclear, see
+   `references/writing-findings.md`.
+
+```markdown
+## Skill Review: {{SKILL_NAME}}
+
+### ✅ Strengths
+- [List what follows best practices]
+
+### ⚠️ Issues Found
+- [List problems with severity, marking spec violation vs. preference]
+
+### 📋 Recommendations
+- [Specific actionable improvements]
+
+### Metrics
+- Description length: {{X}} chars (spec cap: 1,024; listing cap: 1,536) — note
+  whether the length is buying trigger coverage, not whether it is short
+- Content length: {{Y}} lines always-on (limit: 500; preferred: 100-200)
+- Estimated tokens: {{L}} listing / {{A}} on activation
+- Supporting files reviewed: {{N}}
+- YAML valid: Yes/No
+- References resolve: Yes/No
+- Hardcoded credentials: Yes/No (should be No)
+- Uses relative paths: Yes/No (should be Yes)
+```
+
+   Measure the metrics rather than estimating them — the analyser prints every
+   one. A metric that was guessed is worse than one that was omitted, because it
+   looks checked.
 
 ## Triaging the hygiene hits
 
@@ -190,3 +252,7 @@ means is the review:
   names are deliberately written above without the dollar sign for that reason.
 - **Platform-specific content** — Windows-only paths, Unix-only commands — is
   not pattern-matchable; check it while reading.
+- **Session residue** is the one hit that is usually real. The exception is a
+  skill documenting the anti-pattern, which trips it the same way the credential
+  regexes are tripped. Ask what a reader outside that session would do with the
+  sentence; if the answer is "go and find out", it is a finding.
