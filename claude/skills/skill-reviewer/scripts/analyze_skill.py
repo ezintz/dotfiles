@@ -38,12 +38,80 @@ HYGIENE = [
     ("connection-string", re.compile(r"\b\w+://[^/\s]+:[^@\s]+@")),
     ("absolute-path", re.compile(r"(/Users/|/home/[a-z]|C:\\Users)")),
     ("dev-note", re.compile(r"\b(TODO|FIXME|changelog|validated on|last updated)\b", re.I)),
+    # Language that only resolves inside the session that produced the file.
+    # A skill or rule is read cold, months later, by someone who was not there:
+    # "the wrapper we added" and "as discussed above" name nothing, and a commit
+    # or date pins it to one incident. Needs triage -- a documented *example* of
+    # the anti-pattern trips this too.
+    ("session-residue", re.compile(
+        r"\bwe\s+(added|wrote|found|fixed|changed|decided|discussed|tried|noticed|"
+        r"created|removed|ran|chose|agreed)\b"
+        r"|\byou\s+(asked|mentioned|said|reported|requested)\b"
+        r"|\bas\s+(discussed|mentioned|noted|described)\s+(above|earlier|previously|before)\b"
+        r"|\bearlier\s+in\s+(this|the)\s+(session|conversation)\b"
+        r"|\bthe\s+(fix|change|bug|issue|problem)\s+(above|from\s+earlier)\b"
+        r"|\b20\d{2}-\d{2}-\d{2}\b"
+        r"|(?<![0-9a-z/])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}(?![0-9a-z])", re.I)),
     # Not a defect by itself: using the variable for a runtime path is correct,
     # documenting its name ships an expanded absolute path. Needs triage.
     ("substitution-var", re.compile(r"CLAUDE_(SKILL_DIR|PROJECT_DIR|PLUGIN_ROOT)")),
 ]
 
 JUNK = ("__pycache__", ".DS_Store", ".pytest_cache", "node_modules", ".ruff_cache")
+
+# Calibrated against this repo's 70 markdown files with tiktoken cl100k_base:
+# 4.25 chars/token, 5.3% mean absolute error, worst single file 35% high on
+# dense code. Good enough to size a budget, not to bill against -- the point is
+# whether a skill costs 300 tokens or 3,000, which this settles without making
+# the analyser depend on a tokeniser it would have to install.
+CHARS_PER_TOKEN = 4.25
+
+
+def est_tokens(text):
+    return round(len(text) / CHARS_PER_TOKEN)
+
+
+# "Read X" is a step that runs; "see X" is a pointer you follow in a case. Only
+# the imperative can be eager, which keeps a paragraph of "for Y, see X"
+# cross-references from counting against the body budget. The verb list is
+# deliberately short: `open` and `load` matched "Agent Skills open standard" and
+# "when a claim is load-bearing", and a budget that counts those is not trusted.
+# Anchored to a clause start, so only a real imperative counts: "See X for the
+# escape hatches to check" ends in the verb without ever telling anyone to open
+# X, and an unanchored match read that as a mandatory 264-line load.
+EAGER_RE = re.compile(r"(?:^|(?<=[.;:!?])\s)\s*(read|consult|check|apply)\b", re.I)
+
+# A condition in front of the imperative defers it again. `should` and `where`
+# are excluded for the same reason as `open`: "report each with the destination
+# it should move to" and "Where each finding goes" are not conditions, and
+# admitting them hid two reads that do happen on every run.
+GUARD_RE = re.compile(r"\b(if|when|unless|only|optional|as needed|"
+                      r"in case|for the cases|otherwise|in the rare)\b", re.I)
+
+
+def read_units(text):
+    """Blocks a pointer's guard and imperative can plausibly share.
+
+    A blank-line paragraph, except that list items are split apart: joining a
+    reference list into one unit lets any bullet's verb decide the verdict for
+    every pointer in it.
+    """
+    units = []
+    for block in re.split(r"\n\s*\n", text):
+        lines = block.splitlines()
+        if not any(re.match(r"\s*([-*+]|\d+\.)\s", ln) for ln in lines):
+            units.append(" ".join(block.split()))
+            continue
+        cur = []
+        for ln in lines:
+            if re.match(r"\s*([-*+]|\d+\.)\s", ln) and cur:
+                units.append(" ".join(" ".join(cur).split()))
+                cur = []
+            cur.append(ln)
+        if cur:
+            units.append(" ".join(" ".join(cur).split()))
+    return [u for u in units if u]
+
 
 # Side effects the author probably wants gated behind explicit invocation.
 # Base and gerund forms only: a past participle is usually describing something
@@ -134,13 +202,12 @@ def analyze(skill_dir):
                           "`disable-model-invocation: true` so only the user triggers it")
 
     # --- body budget ------------------------------------------------------
+    # The 500-line ceiling is on SKILL.md itself; the 100-200 band is on what
+    # actually loads, computed once the pointers are resolved below.
     total = len(text.splitlines())
     r["lines"] = total
     if total > 500:
         r["problems"].append(("spec", f"SKILL.md is {total} lines (official limit 500)"))
-    elif total > 200:
-        r["notes"].append(f"SKILL.md is {total} lines; preferred band is 100-200 "
-                          "— move reference material to references/")
 
     # --- writing-style signals -------------------------------------------
     r["allcaps_imperatives"] = len(re.findall(r"\b(MUST|NEVER|ALWAYS)\b", body))
@@ -156,8 +223,9 @@ def analyze(skill_dir):
         if any(j in f.parts for j in JUNK) or f.name in JUNK:
             r["problems"].append(("check", f"build artifact should not ship: {rel}"))
             continue
-        r["files"].append({"path": rel, "lines": len(
-            f.read_text(encoding="utf-8", errors="replace").splitlines())})
+        content = f.read_text(encoding="utf-8", errors="replace")
+        r["files"].append({"path": rel, "lines": len(content.splitlines()),
+                           "chars": len(content)})
 
     # Consume any leading path before the keyword directory, so a pointer into
     # *another* skill is seen whole. Matching the bare tail instead makes
@@ -169,7 +237,11 @@ def analyze(skill_dir):
     # file referenced the documented way is reported missing.
     scan = re.sub(r"\$\{?CLAUDE_SKILL_DIR\}?/", "", text)
     referenced, external = set(), set()
-    for tok in re.findall(r"[~\w./-]*(?:references|scripts|assets|examples)/[\w./-]+", scan):
+    # `refs` is listed as well as `references`: the shared library outside the
+    # skill lives at `../../refs/`, and leaving it out made every pointer into
+    # it invisible -- neither validated as a link nor counted when read.
+    # Alternation is left-biased, so `references` still wins where both fit.
+    for tok in re.findall(r"[~\w./-]*(?:references|refs|scripts|assets|examples)/[\w./-]+", scan):
         if tok.startswith(("~", "/")):
             external.add(tok)
         else:
@@ -181,6 +253,50 @@ def analyze(skill_dir):
     for p in r["pointers"]:
         if not p["exists"]:
             r["problems"].append(("spec", f"SKILL.md points at {p['path']} which does not exist"))
+
+    # A bundled .md the body reads on every run costs exactly what the same
+    # prose would cost inside SKILL.md, so it counts against the band. Moving
+    # text into references/ defers nothing unless the read is guarded by a
+    # condition -- an unguarded "Read references/x.md" step buys a tool call
+    # and no tokens back. One unguarded mention is enough to make it eager.
+    units = read_units(text)
+    by_path = {f["path"]: f for f in r["files"]}
+    r["eager"], r["always_on"] = [], total
+    load_chars = len(text)
+    # A ref outside the skill directory is billed exactly like a bundled one
+    # once the body says to read it, so both are measured the same way. Only
+    # the size lookup differs: bundled files are already counted above.
+    for ptr in sorted(referenced) + sorted(external):
+        if not ptr.endswith(".md"):
+            continue
+        if ptr in by_path:
+            size = (by_path[ptr]["lines"], by_path[ptr]["chars"])
+        else:
+            f = Path(ptr).expanduser()
+            if not f.is_absolute():
+                f = (d / ptr).resolve()
+            if not f.is_file():
+                continue
+            c = f.read_text(encoding="utf-8", errors="replace")
+            size = (len(c.splitlines()), len(c))
+        windows = [u for u in units if ptr in u]
+        if any(EAGER_RE.search(w) and not GUARD_RE.search(w) for w in windows):
+            r["always_on"] += size[0]
+            load_chars += size[1]
+            r["eager"].append({"path": ptr, "lines": size[0]})
+
+    # Two different bills. The listing entry is charged in every session of
+    # every project whether or not the skill is ever used; the body is charged
+    # only when it activates. A fat description is the expensive one.
+    r["tokens_listed"] = round(r["listing_chars"] / CHARS_PER_TOKEN)
+    r["tokens_load"] = round(load_chars / CHARS_PER_TOKEN)
+    if r["always_on"] > 200:
+        detail = ""
+        if r["eager"]:
+            parts = " + ".join(f"{e['lines']} {e['path']}" for e in r["eager"])
+            detail = f" ({total} SKILL.md + {parts}, read on every run)"
+        r["notes"].append(f"always-on body is {r['always_on']} lines; preferred "
+                          f"band is 100-200{detail}")
 
     bundled = {f["path"] for f in r["files"]} - {"SKILL.md"}
     for orphan in sorted(bundled - referenced):
@@ -231,8 +347,14 @@ def main():
         print(json.dumps(r, indent=2))
         return 0
 
-    print(f"SKILL: {r['dir_name']}  ({r['lines']} lines, "
-          f"description {r['description_chars']} chars)\n")
+    budget = f"{r['lines']} lines"
+    if r.get("always_on", r["lines"]) != r["lines"]:
+        budget = f"{r['lines']} lines, {r['always_on']} always-on"
+    print(f"SKILL: {r['dir_name']}  ({budget}, "
+          f"description {r['description_chars']} chars)")
+    print(f"  ~{r['tokens_listed']:,} tok in every session (listing entry)  ·  "
+          f"~{r['tokens_load']:,} tok on activation (body"
+          f"{' + refs read every run' if r['eager'] else ''})\n")
 
     if r["problems"]:
         print("PROBLEMS")

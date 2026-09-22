@@ -25,7 +25,31 @@ HYGIENE = [
     ("connection-string", re.compile(r"\b\w+://[^/\s]+:[^@\s]+@")),
     ("absolute-path", re.compile(r"(/Users/|/home/[a-z]|C:\\Users)")),
     ("dev-note", re.compile(r"\b(TODO|FIXME|changelog|validated on|last updated)\b", re.I)),
+    # Language that only resolves inside the session that produced the file.
+    # A skill or rule is read cold, months later, by someone who was not there:
+    # "the wrapper we added" and "as discussed above" name nothing, and a commit
+    # or date pins it to one incident. Needs triage -- a documented *example* of
+    # the anti-pattern trips this too.
+    ("session-residue", re.compile(
+        r"\bwe\s+(added|wrote|found|fixed|changed|decided|discussed|tried|noticed|"
+        r"created|removed|ran|chose|agreed)\b"
+        r"|\byou\s+(asked|mentioned|said|reported|requested)\b"
+        r"|\bas\s+(discussed|mentioned|noted|described)\s+(above|earlier|previously|before)\b"
+        r"|\bearlier\s+in\s+(this|the)\s+(session|conversation)\b"
+        r"|\bthe\s+(fix|change|bug|issue|problem)\s+(above|from\s+earlier)\b"
+        r"|\b20\d{2}-\d{2}-\d{2}\b"
+        r"|(?<![0-9a-z/])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{7,40}(?![0-9a-z])", re.I)),
 ]
+
+
+# Calibrated against this repo's 70 markdown files with tiktoken cl100k_base:
+# 4.25 chars/token, 5.3% mean absolute error. Enough to size a budget without
+# making the analyser depend on a tokeniser it would have to install.
+CHARS_PER_TOKEN = 4.25
+
+
+def est_tokens(chars):
+    return round(chars / CHARS_PER_TOKEN)
 
 
 def glob_to_regex(pat):
@@ -137,18 +161,20 @@ def main():
         return 2
 
     report = {"root": str(root), "rules": [], "always_on": {}, "overlaps": {}, "hygiene": []}
-    owners, unscoped_lines = {}, 0
+    owners, unscoped_lines, unscoped_chars = {}, 0, 0
 
     for f in sorted(rules_dir.rglob("*.md")):
         text = f.read_text(encoding="utf-8", errors="replace")
         n = len(text.splitlines())
         paths, keys = parse_frontmatter(text)
         rel = str(f.relative_to(rules_dir))
-        entry = {"file": rel, "lines": n, "scoped": paths is not None,
+        entry = {"file": rel, "lines": n, "tokens": est_tokens(len(text)),
+                 "scoped": paths is not None,
                  "patterns": [], "unknown_keys": sorted(keys - KNOWN_KEYS)}
 
         if paths is None:
             unscoped_lines += n
+            unscoped_chars += len(text)
         else:
             for p in paths:
                 rx = glob_to_regex(p)
@@ -170,16 +196,19 @@ def main():
                                               "text": line.strip()[:100]})
         report["rules"].append(entry)
 
-    md_lines = 0
+    md_lines = md_chars = 0
     for cand in ("CLAUDE.md", ".claude/CLAUDE.md"):
         p = root / cand
         if p.is_file():
-            md_lines += len(p.read_text(encoding="utf-8", errors="replace").splitlines())
+            t = p.read_text(encoding="utf-8", errors="replace")
+            md_lines += len(t.splitlines())
+            md_chars += len(t)
 
     report["always_on"] = {
         "unscoped_rule_lines": unscoped_lines,
         "claude_md_lines": md_lines,
         "total": unscoped_lines + md_lines,
+        "tokens": est_tokens(unscoped_chars + md_chars),
         "over_target": unscoped_lines + md_lines > 200,
     }
     report["overlaps"] = {p: rs for p, rs in sorted(owners.items()) if len(rs) > 1}
@@ -189,24 +218,27 @@ def main():
         return 0
 
     a = report["always_on"]
-    print(f"ALWAYS-ON BUDGET: {a['total']} lines "
+    print(f"ALWAYS-ON BUDGET: {a['total']} lines / ~{a['tokens']:,} tok "
           f"({a['unscoped_rule_lines']} from unscoped rules + {a['claude_md_lines']} CLAUDE.md)"
-          f"{'  ** OVER 200 TARGET **' if a['over_target'] else ''}\n")
+          f"{'  ** OVER 200 TARGET **' if a['over_target'] else ''}")
+    print("  charged in every session here. A scoped rule's tokens below are "
+          "charged per matching edit instead.\n")
 
-    print(f"{'rule':<26} {'lines':>5} scope")
-    print("-" * 72)
+    print(f"{'rule':<26} {'lines':>5} {'~tok':>6} scope")
+    print("-" * 78)
     for r in report["rules"]:
         if not r["scoped"]:
-            print(f"{r['file']:<26} {r['lines']:>5} UNSCOPED — always on")
+            print(f"{r['file']:<26} {r['lines']:>5} {r['tokens']:>6} UNSCOPED — always on")
         else:
             bits = [f"{p['pattern']} ({p['matches']})"
                     + (" DEAD" if p["dead"] else "")
                     + (" BAD-BRACKET" if p["invalid_bracket"] else "")
                     for p in r["patterns"]]
             flag = "  ** EXPANSION OVER BUDGET **" if r.get("over_budget") else ""
-            print(f"{r['file']:<26} {r['lines']:>5} {'; '.join(bits)}{flag}")
+            print(f"{r['file']:<26} {r['lines']:>5} {r['tokens']:>6} {'; '.join(bits)}{flag}")
         if r["unknown_keys"]:
-            print(f"{'':<26} {'':>5} ignored frontmatter keys: {', '.join(r['unknown_keys'])}")
+            print(f"{'':<26} {'':>5} {'':>6} ignored frontmatter keys: "
+                  f"{', '.join(r['unknown_keys'])}")
 
     dead = [(r["file"], p["pattern"]) for r in report["rules"] for p in r["patterns"] if p["dead"]]
     if dead:
