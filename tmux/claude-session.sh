@@ -33,16 +33,29 @@ case "${1:-}" in
     ## A pane missing from the live list keeps its old entry: while tmux shuts
     ## down, saves still run as panes disappear one by one, and must not
     ## overwrite the full list with the few that are left. Stale entries are
-    ## harmless -- restore only types into panes that exist.
+    ## harmless -- restore only types into a pane still listed at the same
+    ## coordinates.
     tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{@claude-session}' |
       awk 'FNR == NR { live[$1] = 1; if (NF == 2) print; next } !($1 in live)' - "$file" 2>/dev/null \
       >| "${file}.tmp" && mv -f "${file}.tmp" "$file"
     ;;
   restore)
     [ -r "$file" ] || exit 0
+    ## Match the whole pane coordinate, not just the session. resurrect can
+    ## recreate a session with a different layout, so session:0.1 may now be a
+    ## different pane than the one the entry was written for -- and send-keys
+    ## would type `claude --resume <someone else's id>` into whatever runs
+    ## there. Whole-line match: a substring test would read 0:0.1 inside 0:0.10.
+    live="$(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null)"
     while read -r pane id; do
-      tmux has-session -t "=${pane%%:*}" 2>/dev/null || continue
-      tmux send-keys -t "=${pane}" "claude --resume ${id}" Enter
+      printf '%s\n' "$live" | grep -qxF "$pane" || continue
+      ## Record it before Claude does. Claude reports its id at SessionStart,
+      ## seconds later, and a save in that window sees a live pane carrying no
+      ## option: the merge above prints nothing for it and drops the old line
+      ## too, because the line is only kept while the pane is absent from the
+      ## live list. tmux.conf saves on a 300s timer, so the window is real.
+      tmux set-option -p -t "=${pane}" @claude-session "$id"
+      tmux send-keys -t "=${pane}" "claude --resume '${id}'" Enter
     done < "$file"
     ;;
 esac
