@@ -9,12 +9,12 @@
     "bashMessageBackgroundColor": "#1E2227",
     "selectionBg": "#3E4451",
 
-    "diffAdded": "#005F00",
+    "diffAdded": "#008700",
     "diffRemoved": "#870000",
     "diffAddedDimmed": "#005F00",
     "diffRemovedDimmed": "#5F0000",
-    "diffAddedWord": "#98C379",
-    "diffRemovedWord": "#E06C75",
+    "diffAddedWord": "#005F00",
+    "diffRemovedWord": "#5F0000",
 
     "text": "#DCDFE4",
     "inverseText": "#21252B",
