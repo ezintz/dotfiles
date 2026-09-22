@@ -102,6 +102,7 @@ that file to add or remove packages. The full set is:
 - [opentofu](https://opentofu.org/): Open source infrastructure as code.
 - [reattach-to-user-namespace](https://github.com/ChrisJohnsen/tmux-MacOSX-pasteboard): Gives tmux sessions access to the macOS pasteboard.
 - [tmux](https://tmux.github.io/): Terminal multiplexer like [screen](https://www.gnu.org/software/screen/).
+- [uv](https://docs.astral.sh/uv/): Python package and project manager; installs into a venv rather than the PEP 668 managed interpreter.
 - [wget](http://www.gnu.org/software/wget/): GNU Wget is a free software package for retrieving files.
 - [wireguard-tools](https://www.wireguard.com/): WireGuard VPN tooling.
 
