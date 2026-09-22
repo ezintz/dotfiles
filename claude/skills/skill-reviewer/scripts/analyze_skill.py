@@ -6,6 +6,12 @@ and quietly differs between runs. The judgement half — whether the description
 buys trigger coverage, whether the scope is coherent, whether a flagged string
 is really a secret — is left to the reviewer.
 
+The HYGIENE table and CHARS_PER_TOKEN below are duplicated in the other
+reviewer's analyser rather than shared. That is deliberate:
+bin/claude-export-skills zips one skill directory, so a module imported from
+outside it does not travel and the exported skill breaks on upload. Keep the
+two copies in step by hand when either changes.
+
 Usage:
     python3 analyze_skill.py <skill-dir> [--json] [--check-links]
 """
@@ -33,7 +39,12 @@ CLAUDE_CODE_ONLY = {
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 HYGIENE = [
-    ("credential", re.compile(r"(password|api_key|apikey|secret|token)\s*[=:]\s*\S", re.I)),
+    # A bare number is never a credential, and excluding one is what keeps
+    # CHARS_PER_TOKEN below from matching its own detector. A word boundary
+    # would do it too, but at the cost of api_token and friends, which are the
+    # spelling this is actually hunting.
+    ("credential", re.compile(
+        r"(password|api_key|apikey|secret|token)s?\s*[=:]\s*(?![\d.]+\b)\S", re.I)),
     ("bearer-token", re.compile(r"\bBearer\s+[A-Za-z0-9._-]{8,}")),
     ("connection-string", re.compile(r"\b\w+://[^/\s]+:[^@\s]+@")),
     ("absolute-path", re.compile(r"(/Users/|/home/[a-z]|C:\\Users)")),
@@ -67,8 +78,8 @@ JUNK = ("__pycache__", ".DS_Store", ".pytest_cache", "node_modules", ".ruff_cach
 CHARS_PER_TOKEN = 4.25
 
 
-def est_tokens(text):
-    return round(len(text) / CHARS_PER_TOKEN)
+def est_tokens(chars):
+    return round(chars / CHARS_PER_TOKEN)
 
 
 # "Read X" is a step that runs; "see X" is a pointer you follow in a case. Only
@@ -79,7 +90,13 @@ def est_tokens(text):
 # Anchored to a clause start, so only a real imperative counts: "See X for the
 # escape hatches to check" ends in the verb without ever telling anyone to open
 # X, and an unanchored match read that as a mandatory 264-line load.
-EAGER_RE = re.compile(r"(?:^|(?<=[.;:!?])\s)\s*(read|consult|check|apply)\b", re.I)
+# The marker group is load-bearing: read_units makes a list item unit-initial,
+# so without it the anchor could never reach the verb and `- Read x.md` scored
+# as deferred while `1. Read x.md` scored as eager -- the numbered form only
+# worked by accident of the `.` in "1.". A comma joins the lookbehind for the
+# same reason ("Before reporting, read x.md").
+EAGER_RE = re.compile(r"(?:^|(?<=[.;:!?,])\s)\s*(?:[-*+]|\d+[.)]|\#{1,6})?\s*"
+                      r"(read|consult|check|apply)\b", re.I)
 
 # A condition in front of the imperative defers it again. `should` and `where`
 # are excluded for the same reason as `open`: "report each with the destination
@@ -89,27 +106,51 @@ GUARD_RE = re.compile(r"\b(if|when|unless|only|optional|as needed|"
                       r"in case|for the cases|otherwise|in the rare)\b", re.I)
 
 
+LIST_RE = re.compile(r"\s*([-*+]|\d+[.)])\s")
+
+
 def read_units(text):
     """Blocks a pointer's guard and imperative can plausibly share.
 
     A blank-line paragraph, except that list items are split apart: joining a
     reference list into one unit lets any bullet's verb decide the verdict for
     every pointer in it.
+
+    Whatever introduces the list is prepended to every item rather than
+    standing alone, because that is where the condition lives -- "Only when the
+    analyser reports a dead pointer:" over a numbered step. Emitting the two
+    separately left the step looking unconditional and billed a plainly guarded
+    read against the always-on total.
+
+    The introduction is found in two places, and both are needed: text sitting
+    directly above the first item, and the previous paragraph when it ends in a
+    colon. Markdown puts a blank line before a list at least as often as not,
+    and only the second case survives the blank-line split.
     """
-    units = []
+    units, intro = [], ""
     for block in re.split(r"\n\s*\n", text):
         lines = block.splitlines()
-        if not any(re.match(r"\s*([-*+]|\d+\.)\s", ln) for ln in lines):
-            units.append(" ".join(block.split()))
+        if not any(LIST_RE.match(ln) for ln in lines):
+            flat = " ".join(block.split())
+            units.append(flat)
+            intro = flat if flat.endswith(":") else ""
             continue
-        cur = []
+
+        def emit(parts):
+            units.append(" ".join(f"{intro} {' '.join(parts)}".split()))
+
+        lead, cur = [], []
         for ln in lines:
-            if re.match(r"\s*([-*+]|\d+\.)\s", ln) and cur:
-                units.append(" ".join(" ".join(cur).split()))
+            if LIST_RE.match(ln) and cur:
+                if not lead and not LIST_RE.match(cur[0]):
+                    lead = cur
+                else:
+                    emit(lead + cur)
                 cur = []
             cur.append(ln)
         if cur:
-            units.append(" ".join(" ".join(cur).split()))
+            emit(lead + cur)
+        intro = ""
     return [u for u in units if u]
 
 
@@ -236,12 +277,26 @@ def analyze(skill_dir):
     # left in, its trailing slash reads as an absolute path and every bundled
     # file referenced the documented way is reported missing.
     scan = re.sub(r"\$\{?CLAUDE_SKILL_DIR\}?/", "", text)
+    # A URL is not a file. `[~\w./-]*` does not cross `:` but does cross `/`,
+    # so a deep link such as .../skills/tree/main/x/scripts/helper.py yielded
+    # the token `//github.com/.../scripts/helper.py`, which leads with `/`,
+    # reads as an absolute path, resolves nowhere, and was then reported as a
+    # spec violation -- the analyser's loudest verdict, on a working link.
+    scan = re.sub(r"https?://\S+", " ", scan)
+    # `<skill-dir>/scripts/x` is the docs' way of writing the skill root. The
+    # placeholder is not part of the path, and leaving it in made the match
+    # start at `/scripts`, i.e. absolute, i.e. dead.
+    scan = re.sub(r"<[^<>\s]+>/", "", scan)
     referenced, external = set(), set()
     # `refs` is listed as well as `references`: the shared library outside the
     # skill lives at `../../refs/`, and leaving it out made every pointer into
     # it invisible -- neither validated as a link nor counted when read.
     # Alternation is left-biased, so `references` still wins where both fit.
-    for tok in re.findall(r"[~\w./-]*(?:references|refs|scripts|assets|examples)/[\w./-]+", scan):
+    # The prefix is whole path segments rather than any run of path characters:
+    # the loose form let `my-scripts/x.md` match from the word start, turning an
+    # unrelated directory into a dead pointer into this skill.
+    for tok in re.findall(r"(?<![\w.-])(?:[~\w.-]+/)*"
+                          r"(?:references|refs|scripts|assets|examples)/[\w./-]+", scan):
         if tok.startswith(("~", "/")):
             external.add(tok)
         else:
@@ -266,21 +321,30 @@ def analyze(skill_dir):
     # A ref outside the skill directory is billed exactly like a bundled one
     # once the body says to read it, so both are measured the same way. Only
     # the size lookup differs: bundled files are already counted above.
+    # Keyed by resolved path, not by spelling: a body that writes both
+    # `../../refs/x.md` and `~/.claude/refs/x.md` names one file that loads
+    # once, and summing the two spellings billed it twice.
+    seen = set()
     for ptr in sorted(referenced) + sorted(external):
         if not ptr.endswith(".md"):
             continue
         if ptr in by_path:
             size = (by_path[ptr]["lines"], by_path[ptr]["chars"])
+            key = (d / ptr).resolve()
         else:
             f = Path(ptr).expanduser()
             if not f.is_absolute():
                 f = (d / ptr).resolve()
             if not f.is_file():
                 continue
+            key = f.resolve()
             c = f.read_text(encoding="utf-8", errors="replace")
             size = (len(c.splitlines()), len(c))
+        if key in seen:
+            continue
         windows = [u for u in units if ptr in u]
         if any(EAGER_RE.search(w) and not GUARD_RE.search(w) for w in windows):
+            seen.add(key)
             r["always_on"] += size[0]
             load_chars += size[1]
             r["eager"].append({"path": ptr, "lines": size[0]})
@@ -288,8 +352,8 @@ def analyze(skill_dir):
     # Two different bills. The listing entry is charged in every session of
     # every project whether or not the skill is ever used; the body is charged
     # only when it activates. A fat description is the expensive one.
-    r["tokens_listed"] = round(r["listing_chars"] / CHARS_PER_TOKEN)
-    r["tokens_load"] = round(load_chars / CHARS_PER_TOKEN)
+    r["tokens_listed"] = est_tokens(r["listing_chars"])
+    r["tokens_load"] = est_tokens(load_chars)
     if r["always_on"] > 200:
         detail = ""
         if r["eager"]:
@@ -348,7 +412,7 @@ def main():
         return 0
 
     budget = f"{r['lines']} lines"
-    if r.get("always_on", r["lines"]) != r["lines"]:
+    if r["always_on"] != r["lines"]:
         budget = f"{r['lines']} lines, {r['always_on']} always-on"
     print(f"SKILL: {r['dir_name']}  ({budget}, "
           f"description {r['description_chars']} chars)")

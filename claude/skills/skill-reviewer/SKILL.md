@@ -219,7 +219,10 @@ Then do the parts that need reading:
 ### Metrics
 - Description length: {{X}} chars (spec cap: 1,024; listing cap: 1,536) — note
   whether the length is buying trigger coverage, not whether it is short
-- Content length: {{Y}} lines always-on (limit: 500; preferred: 100-200)
+- Content length: {{Y}} lines in `SKILL.md` (spec limit: 500) · {{A}} lines
+  always-on once eager reads are counted (preferred band: 100-200). The
+  ceiling is on the file; the band is on what loads, so a skill can pass one
+  and fail the other.
 - Estimated tokens: {{L}} listing / {{A}} on activation
 - Supporting files reviewed: {{N}}
 - YAML valid: Yes/No
