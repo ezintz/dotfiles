@@ -5,6 +5,12 @@ Everything here is deterministic — computing it by hand invites transcription
 errors and quietly differs between runs. The judgement half (derivability,
 verifiability, placement) is left to the reviewer.
 
+The HYGIENE table and CHARS_PER_TOKEN below are duplicated in the other
+reviewer's analyser rather than shared. That is deliberate:
+bin/claude-export-skills zips one skill directory, so a module imported from
+outside it does not travel and the exported skill breaks on upload. Keep the
+two copies in step by hand when either changes.
+
 Usage:
     python3 analyze_rules.py [repo_root] [--json]
 """
@@ -20,7 +26,12 @@ from pathlib import Path
 KNOWN_KEYS = {"paths"}
 
 HYGIENE = [
-    ("credential", re.compile(r"(password|api_key|apikey|secret|token)\s*[=:]\s*\S", re.I)),
+    # A bare number is never a credential, and excluding one is what keeps
+    # CHARS_PER_TOKEN below from matching its own detector. A word boundary
+    # would do it too, but at the cost of api_token and friends, which are the
+    # spelling this is actually hunting.
+    ("credential", re.compile(
+        r"(password|api_key|apikey|secret|token)s?\s*[=:]\s*(?![\d.]+\b)\S", re.I)),
     ("bearer-token", re.compile(r"\bBearer\s+[A-Za-z0-9._-]{8,}")),
     ("connection-string", re.compile(r"\b\w+://[^/\s]+:[^@\s]+@")),
     ("absolute-path", re.compile(r"(/Users/|/home/[a-z]|C:\\Users)")),
@@ -126,8 +137,12 @@ def parse_frontmatter(text):
     # is produced and the scope column renders empty.
     flow = re.search(r"\[(.*)\]", body, re.S)   # greedy: bracket expressions may contain ]
     if flow:
+        # The unquoted alternative has to swallow a whole bracket expression,
+        # or `[src/[abc]*.ts, docs/**]` splits into "src/", "abc" and "*.ts" --
+        # two globs nobody wrote, reported dead, and the real one lost.
         paths = [q or bare for q, bare in
-                 re.findall(r"""["']([^"']+)["']|([^,\s\[\]]+)""", flow.group(1))]
+                 re.findall(r"""["']([^"']+)["']|((?:\[[^\]]*\]|[^,\s\[\]])+)""",
+                            flow.group(1))]
     elif re.search(r"^\s*-\s", body, re.M):
         paths = re.findall(r"^\s*-\s*[\"']?(.+?)[\"']?\s*$", body, re.M)
     else:
@@ -145,20 +160,28 @@ def main():
     args = ap.parse_args()
     root = Path(args.root).resolve()
 
+    rules_dir = root / ".claude" / "rules"
+    if not rules_dir.is_dir():
+        print(f"error: no .claude/rules under {root}", file=sys.stderr)
+        return 2
+
+    # $HOME holds ~/.claude/rules and is not a repository, so a hard git
+    # requirement locked the analyser out of the user level entirely -- the
+    # half that bills every project rather than one. Without a file list the
+    # budget, frontmatter and hygiene checks all still run; only the glob match
+    # counts are unavailable, so dead-glob detection is suppressed rather than
+    # reported as zero matches, which would read as "every pattern is dead".
     try:
         tracked = subprocess.run(
             ["git", "-C", str(root), "ls-files"],
             capture_output=True, text=True, check=True,
         ).stdout.split("\n")
         tracked = [f for f in tracked if f]
-    except subprocess.CalledProcessError:
-        print(f"error: {root} is not a git repository", file=sys.stderr)
-        return 2
-
-    rules_dir = root / ".claude" / "rules"
-    if not rules_dir.is_dir():
-        print(f"error: no .claude/rules under {root}", file=sys.stderr)
-        return 2
+        matching = True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        tracked, matching = [], False
+        print(f"note: {root} is not a git repository — "
+              f"reporting budget and hygiene, not glob matches\n", file=sys.stderr)
 
     report = {"root": str(root), "rules": [], "always_on": {}, "overlaps": {}, "hygiene": []}
     owners, unscoped_lines, unscoped_chars = {}, 0, 0
@@ -180,14 +203,19 @@ def main():
                 rx = glob_to_regex(p)
                 hits = 0 if rx is None else sum(1 for t in tracked if rx.match(t))
                 entry["patterns"].append({
-                    "pattern": p, "matches": hits,
+                    "pattern": p, "matches": hits if matching else None,
                     "expanded": brace_count(p),
                     "invalid_bracket": rx is None,
-                    "dead": hits == 0,
+                    "dead": matching and hits == 0,
                 })
                 owners.setdefault(p, []).append(rel)
             entry["expansion_total"] = sum(x["expanded"] for x in entry["patterns"])
             entry["over_budget"] = entry["expansion_total"] > 1000
+            # `paths: []` is the one spelling the parser accepts without
+            # complaint, and it is exactly the silent failure the comment above
+            # warns about: scoped, so never always-on, and matching nothing, so
+            # never loaded either. The rule is inert and nothing else says so.
+            entry["empty_scope"] = not entry["patterns"]
 
         for label, rx in HYGIENE:
             for i, line in enumerate(text.splitlines(), 1):
@@ -229,8 +257,12 @@ def main():
     for r in report["rules"]:
         if not r["scoped"]:
             print(f"{r['file']:<26} {r['lines']:>5} {r['tokens']:>6} UNSCOPED — always on")
+        elif r.get("empty_scope"):
+            print(f"{r['file']:<26} {r['lines']:>5} {r['tokens']:>6} "
+                  f"EMPTY `paths:` — scoped to nothing, never loads")
         else:
-            bits = [f"{p['pattern']} ({p['matches']})"
+            bits = [p["pattern"]
+                    + (f" ({p['matches']})" if p["matches"] is not None else "")
                     + (" DEAD" if p["dead"] else "")
                     + (" BAD-BRACKET" if p["invalid_bracket"] else "")
                     for p in r["patterns"]]
