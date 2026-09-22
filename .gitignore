@@ -6,7 +6,6 @@ claude/skills/*-workspace/
 # locally regardless of git-tracking status) but not checked in.
 claude/skills/code-review/
 claude/skills/code-review-and-quality/
-claude/skills/diff-artifact/
 claude/skills/git-diff/
 claude/skills/performance-optimization/
 claude/skills/security-and-hardening/
