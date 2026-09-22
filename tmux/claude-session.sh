@@ -20,17 +20,28 @@ case "${1:-}" in
     [ -n "$id" ] && tmux set-option -p -t "$TMUX_PANE" @claude-session "$id"
     ;;
   forget)
-    cat >/dev/null
+    ## Only when the user ended the conversation. Killing tmux (a restart, a
+    ## reboot) ends every Claude with reason "other" a moment before the last
+    ## save, and forgetting then would leave that save with nothing to resume.
+    reason="$(jq -r '.reason // empty' 2>/dev/null)"
+    case "$reason" in clear|logout|prompt_input_exit) ;; *) exit 0 ;; esac
     [ -n "${TMUX_PANE:-}" ] || exit 0
     tmux set-option -p -u -t "$TMUX_PANE" @claude-session
     ;;
   save)
+    [ -e "$file" ] || : >| "$file"
+    ## A pane missing from the live list keeps its old entry: while tmux shuts
+    ## down, saves still run as panes disappear one by one, and must not
+    ## overwrite the full list with the few that are left. Stale entries are
+    ## harmless -- restore only types into panes that exist.
     tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{@claude-session}' |
-      awk 'NF == 2' >| "${file}.tmp" && mv -f "${file}.tmp" "$file"
+      awk 'FNR == NR { live[$1] = 1; if (NF == 2) print; next } !($1 in live)' - "$file" 2>/dev/null \
+      >| "${file}.tmp" && mv -f "${file}.tmp" "$file"
     ;;
   restore)
     [ -r "$file" ] || exit 0
     while read -r pane id; do
+      tmux has-session -t "=${pane%%:*}" 2>/dev/null || continue
       tmux send-keys -t "=${pane}" "claude --resume ${id}" Enter
     done < "$file"
     ;;
