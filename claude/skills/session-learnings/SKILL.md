@@ -1,6 +1,6 @@
 ---
-name: git-commit
-description: End-of-work checklist — reviews the session for durable lessons (skill gaps, knowledge, automation ideas), writes them to CLAUDE.md/rules, then commits everything together. Use when the user invokes /git-commit, or signals the work itself is finished: "wrap things up", "end session", "ship it", "we're done", "open a PR/MR". NOT for a routine commit inside ongoing work — "commit this", "commit and push", "save that" — which is plain git with no review.
+name: session-learnings
+description: End-of-work checklist — reviews the session for durable lessons (skill gaps, knowledge, automation ideas), writes them to memory, then commits everything together. Use when user signals the work itself is finished.
 ---
 
 When it is unclear whether the work is finished, commit first and offer the
@@ -9,15 +9,14 @@ didn't ask for.
 
 ## Phase 1: Review
 
-Launch an agent using the `Sonnet 5` model at `medium` effort and look for
-durable, reusable lessons from this session. Hand it the session's own
-history as the input to reason over — it shouldn't re-explore the repo or
-reconstruct context it was already given. Reading a destination file to
-check for an existing entry is fine; re-investigating the code is not.
+Reason over the current session, without re-exploring the repository or
+reconstructing context you already are aware of, for lessons learned
+from it. Reading a destination file to check for an existing entry is
+fine; re-investigating is not.
 
 - Corrections or preferences the user stated
-- Things Claude got wrong, retried, or should have known already
-- Manual steps the user had to request that should've been automatic
+- Things you got wrong, retried, or should have known already
+- Manual steps the user had to request that should've been automated
 - Repetitive work a script or hook could replace
 - Existing entries this session proved wrong, stale, or wrongly scoped
 
@@ -26,13 +25,13 @@ If nothing durable came up, say so and skip to Phase 3 — don't manufacture
 findings.
 
 **Drop anything Claude already knows.** A finding must be a fact about
-*this* codebase, *this* toolchain or *this* user that a fresh session would
-otherwise rediscover the hard way. It is not a finding if it restates:
+*this* codebase or *this* toolchain that a fresh session would otherwise
+rediscover the hard way. It is not a finding if it restates:
 
-- how Claude Code itself works
-- general engineering practice
-- a convention already visible in the repo's own layout or config;
-- what the code plainly says, which is exactly what a rule must *not* be.
+- how Claude Code itself works,
+- general engineering practice,
+- a convention already visible in the repo's own layout or config
+- what the code plainly says, which is exactly what a rule must *not* be
 
 The bar is: "a competent engineer who knows this stack would still get this
 wrong."
@@ -47,33 +46,31 @@ memory is a lead, not evidence, and a rule built on a misremembered detail is
 worse than no rule, because the next session believes it. What cannot be
 checked cheaply is presented, not written.
 
+**Write each finding to be read cold.** You are the only reader who has this
+session, and the entry will be read without it — so no "the wrapper we added",
+no "as discussed above", no bare commit or date, and no internal name left
+unglossed. Name the thing, state the invariant, and keep the origin only as
+provenance in parentheses. An entry that needs this session to make sense is
+the single most common way an otherwise good finding turns into dead weight.
+
 **A session that moved, split or renamed things has almost certainly
 invalidated an existing entry.** Look for pointers that no longer resolve: a
 rule naming a file that moved, a cross-reference to a section that now lives
 elsewhere, a `paths:` glob that stopped matching. Repairing those is a finding,
 and it is the kind only this session is placed to notice.
 
-Repo level and user level have the same structure, so the only question is
-reach: does this apply just to the repo you're in, or to every repo you
-work in? Tool-level knowledge (Kubernetes, Gateway API, ArgoCD, Docker,
-crictl, …) is the usual reason to go user level.
+A finding goes to the cheapest place that fires when it is needed, which is a
+code comment more often than it looks. If that place is not obvious, or the
+reach is — this repo against every repo — `../../refs/knowledge-placement.md`
+has the destination and reach tables.
 
-| Finding | This repo | Every repo |
-| --- | --- | --- |
-| Convention needed in every session | `./CLAUDE.md` | `~/.claude/CLAUDE.md` |
-| Rule scoped to a file type, library, or directory | `./.claude/rules/<name>.md` | `~/.claude/rules/<name>.md` |
-| Reference detail too long to inline | `./.claude/refs/<name>.md` | `~/.claude/refs/<name>.md` |
-| Recurring procedure worth a skill | `./.claude/skills/<name>/SKILL.md` | `~/.claude/skills/<name>/SKILL.md` |
-| Mechanical check worth a hook | `./.claude/hooks/<name>.sh` | `~/.claude/hooks/<name>.sh` |
+`paths:` is the only frontmatter field a rule has; anything else is read
+and discarded. Skills and hooks run on their own once in place, so write
+the spec and let the user decide rather than creating them outright. That
+caution is about *new* automation: fixing a rule, skill or hook that
+already exists and got something wrong is an ordinary edit — make it.
 
-Rules take `paths:` and a one-line `description:` frontmatter; refs are
-linked from the rule or CLAUDE.md entry that needs them. Skills and hooks
-run on their own once in place, so write the spec and let the user decide
-rather than creating them outright. That caution is about *new* automation:
-fixing a rule, skill or hook that already exists and got something wrong is an
-ordinary edit — make it.
-
-Two things that sit outside the table: personal or in-flight context goes
+Two things sit outside those destinations: personal or in-flight context goes
 in `./CLAUDE.local.md` and is never committed, and a lesson about the
 user's preferences or working style isn't a file at all — save it via the
 memory system.
