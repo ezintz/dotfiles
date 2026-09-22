@@ -9,7 +9,9 @@ claude/skills/code-review-and-quality/
 claude/skills/git-diff/
 claude/skills/performance-optimization/
 claude/skills/security-and-hardening/
-claude/refs/
+claude/refs/*
+## Graduated: three skills link it, so it has to travel with them.
+!claude/refs/knowledge-placement.md
 claude/agents/
 
 # Byte-compiled cache from the skills' Python helpers, which import each other.

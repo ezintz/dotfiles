@@ -1,89 +1,43 @@
 
-# This shell
+# Current shell
 
-Bash tool calls run through zsh with a prezto config that is deployed to every
-machine, and three of its settings fail in the direction that looks like success:
-
-- **`>` will not overwrite.** `unsetopt CLOBBER` is set, so redirecting onto an
-  existing file fails with "file exists" and leaves the *old* file in place —
-  the regenerated output never appears and everything downstream reads stale
-  data. Use `>|` to truncate on purpose.
-- **`cp`, `mv` and `rm` are aliased to `-i`.** Prefix with
-  `command` to bypass the alias: `command mv -f old new`.
-- **Unquoted `$var` does not word-split.** Unlike bash, this zsh/prezto config
-  keeps an unquoted parameter expansion as one argument even when it contains
-  spaces — `for a in "x" "y z"; do cmd $a; done` passes `"y z"` as a single
-  arg, not two. A loop built to fan out multi-word test cases silently
-  collapses them instead of erroring, so a real pass-through bug and this
-  shell quirk look identical. Use `${=var}` (`SH_WORD_SPLIT`) or an array
-  (`a=(x y z); for a in $a[@]`) when splitting is actually wanted.
+- `>` will not overwrite: `unsetopt CLOBBER` is set, use `>|` to truncate
+  on purpose.
+- `cp`, `mv`, `rm` are aliased to `-i`, bypass alias: `command mv -f old new`.
+- **Unquoted `$var` does not word-split** (zsh's default, not a setting here), so
+  a multi-word value stays one argument and a loop meant to fan out collapses
+  silently rather than erroring. Use `${=var}` or an array to split on purpose.
 
 ## Knowledge / Memory
 
-**Write a comment only for what the reader cannot get from the code.** Never restate the name,
-signature or control flow — a comment narrating an assignment, a loop or an obvious early return is
-deleted on sight, including one already in the file.
+**A comment carries what the code cannot** — never a restated name, signature or control flow.
+Delete one that does, including a pre-existing one.
 
-**Never point a comment at a plan doc, design doc, or issue/ticket by name or number.** Write the
-reasoning itself into the comment. Plans and requirements are not written in stone — they get
-superseded, merged, renamed or deleted once implemented, and a comment that only says "see
-docs/foo-plan.md §2c" has zero content once foo-plan.md is gone. One mediaplayer session left
-~90 such dangling pointers across `src/` and `tests/` after two finished plans were deleted.
-
-**Every fact gets exactly one home**, because a second copy is billed on every edit that loads both:
-
-- **A code comment — the default.** Anything anchored to one enforcement point: the measurement, the
-  upstream bug, the silent-failure mode, what was already tried.
-- **A rule** — injected in full on every edit matching its `paths:`. Only invariants spanning several
-  files, and "don't undo this" warnings that must land *before* the file is opened. State the
-  invariant in one sentence and name the code that enforces it; never retell the reasoning that
-  already lives there. Scope `paths:` to the files it can actually change a decision about — `src/**`
-  or a whole project directory bills every unrelated edit for it.
-- **This file.** Only what applies globally, or a prohibition so costly it must be seen on every
-  task.
-- **A skill.** The procedure for one task, loaded only while that task is running — never the
-  placement rules above, which are already in context by the time any skill opens.
-
-Before adding to a rule, check whether the fact is already in a comment.
+**Nothing read on its own — comment, rule, skill, PRD, story, issue — may hold its meaning
+in a pointer.**
+"See docs/plan.md §2c", "Phase 2", "as discussed above" are empty to a reader without that
+context; whatever is then unrecoverable was never in it. Write the reasoning in, demote references
+to provenance (parentheses or a `Refs:` trailer), and name things by what they are — "Supercharger
+(the batch-import path)", not "the wrapper we added".
 
 # .NET (Homebrew install)
 
-Both failures below look like the tool is missing or broken rather than
-mis-configured, so check these before reinstalling anything:
-
-- **`~/.dotnet/tools` is not on PATH.** `dotnet tool install -g <tool>` reports
-  success, then the tool is "command not found". Export
-  `PATH="$PATH:$HOME/.dotnet/tools"` in the same call that uses it.
 - **`strings` finds no managed string in a .NET assembly.** They are stored
   UTF-16LE, so an ASCII scan reports nothing — which reads as "this code was
   never packaged" rather than "wrong tool". Search the raw bytes for the encoded
   form instead: `s.encode("utf-16-le") in open(dll, "rb").read()`.
-- **`DOTNET_ROOT` is unset**, so anything that starts the runtime *without*
-  going through the `dotnet` CLI fails with "You must install .NET" even though
-  `dotnet` itself works. That covers global tools and, just as often, a built
-  apphost launched directly (`bin/Release/net10.0/MyApp`) — the usual way to
-  benchmark or drive a GUI app under measurement. `dotnet run` masks it, so the
-  failure shows up only once you switch to running the binary. Point it at the
-  Homebrew install's `libexec`:
-  `export DOTNET_ROOT="$(brew --prefix)/Cellar/dotnet/<version>/libexec"`
-  (get `<version>` from `brew list --versions dotnet`).
 
 # Python (Homebrew install)
 
-- **`pip install` is refused, not broken.** The Homebrew python3 is PEP 668
-  externally-managed, so installing anything — even `--user` — exits non-zero
-  telling you to pass `--break-system-packages`. Don't; build a throwaway venv
-  in the scratchpad instead: `python3 -m venv venv && ./venv/bin/pip install <pkg>`.
+- **`pip install` is refused, not broken** (PEP 668, never
+  `--break-system-packages`): `uv run --with <pkg> script.py`, or
+  `uv venv && uv pip install <pkg>` when a venv on disk is really needed.
 
 # Git
 
-- **Use three dots, not two, against a base branch.** `git diff main...HEAD`
-  diffs against the merge-base (where this branch actually forked from) —
-  the same thing `gh pr diff` and `glab mr diff` compute.
-- **`.claude/worktrees/` is a second checkout, not part of the tree you are
-  working on.** Claude Code puts worktrees there, so a whole extra copy of the
-  repo — sources, `CLAUDE.md`, `.claude/rules/` — sits under the repo root,
-  gitignored. `rg` skips it (hidden directory *and* gitignored), but `find`,
-  `ls`, `du` and `grep -r .claude` do not, so a raw scan double-counts every
-  file and reports each rule twice as if it were duplicated. Prefer
+- **Three dots, not two, against a base branch**: `git diff main...HEAD` uses
+  the merge-base, as `gh pr diff` and `glab mr diff` do.
+- **`.claude/worktrees/` is a second checkout of the repo**, so a scan that
+  doesn't skip it double-counts every file and reports each rule twice as if
+  duplicated. `rg` skips it; `find`, `ls`, `du` and `grep -r` do not. Prefer
   `git ls-files`; with `find`, add `-not -path './.claude/*'`.
