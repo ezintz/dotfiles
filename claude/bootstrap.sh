@@ -9,6 +9,8 @@
 #
 # Installs:
 #   ~/.claude/CLAUDE.md                       global instructions
+#   ~/.claude/rules/*.md                      global path-scoped rules
+#   ~/.claude/refs/*.md                       reference docs the rules link
 #   ~/.claude/hooks/env-guard.sh              the one PreToolUse hook (executable)
 #   ~/.claude/hooks/guard-lib.sh              shared command-parsing helpers
 #   ~/.claude/hooks/guards/*.guard            one profile per guarded tool
@@ -30,6 +32,14 @@ HOOK_STATUS="Checking target environment..."
 # Sourced by the hook, never registered. A raw.githubusercontent fetch cannot
 # glob a remote directory, so unlike bin/dotfiles this list is explicit —
 # adding a guard means adding its filename here too.
+# Global rules, and the refs they link. Explicit for the same reason as
+# PROFILES below -- a raw.githubusercontent fetch cannot list a directory. A
+# rule whose body points at a ref must have that ref here too, or the pointer
+# lands on nothing: the instructions stopped carrying the placement taxonomy
+# inline once it moved to refs/knowledge-placement.md.
+RULES="knowledge-placement.md"
+REFS="knowledge-placement.md"
+
 SUPPORT="guard-lib.sh"
 PROFILES="_kube-context.sh
 _scm-origin.sh
@@ -72,10 +82,20 @@ command -v python3 >/dev/null 2>&1 || {
   exit 1
 }
 
-mkdir -p "$CLAUDE_DIR/hooks/guards"
+mkdir -p "$CLAUDE_DIR/hooks/guards" "$CLAUDE_DIR/rules" "$CLAUDE_DIR/refs"
 
 echo "→ downloading CLAUDE.md"
 fetch "$BASE/global-instructions.md" "$CLAUDE_DIR/CLAUDE.md"
+
+for file in $RULES; do
+  echo "→ downloading rules/$file"
+  fetch "$BASE/rules/$file" "$CLAUDE_DIR/rules/$file"
+done
+
+for file in $REFS; do
+  echo "→ downloading refs/$file"
+  fetch "$BASE/refs/$file" "$CLAUDE_DIR/refs/$file"
+done
 
 for file in $SUPPORT; do
   echo "→ downloading $file"

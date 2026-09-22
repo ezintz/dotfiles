@@ -35,6 +35,18 @@ for dir in "$SKILLS_DIR"/*/; do
     $match || continue
   fi
 
+  # The zip is the skill directory and nothing else, so a link that leaves it
+  # -- ../../refs/x.md, ~/.claude/skills/other/... -- resolves here and is dead
+  # on claude.ai. Warn rather than reach outside: pulling the file in would land
+  # it at a path the body does not name, so the pointer stays broken either way.
+  # Inline the passage, or bundle a copy under the skill's own references/.
+  outside=$(grep -ohE '(\.\./)+[[:alnum:]_./-]+|~/\.claude/[[:alnum:]_./-]+' \
+              "$dir"/*.md "$dir"/*/*.md 2>/dev/null | sort -u || true)
+  if [[ -n "$outside" ]]; then
+    echo "  ! $name links outside its directory; these will be dead in the zip:"
+    while IFS= read -r ref; do echo "      $ref"; done <<< "$outside"
+  fi
+
   (cd "$dir" && zip -r "$OUT_DIR/$name.zip" . -x '.*' > /dev/null)
   size=$(du -h "$OUT_DIR/$name.zip" | cut -f1 | xargs)
   echo "  $name.zip ($size)"

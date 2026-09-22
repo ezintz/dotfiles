@@ -1,6 +1,6 @@
 ---
 name: session-learnings
-description: End-of-work checklist — reviews the session for durable lessons (skill gaps, knowledge, automation ideas), writes them to memory, then commits everything together. Use when user signals the work itself is finished.
+description: End-of-work checklist — reviews the session for durable lessons (skill gaps, knowledge, automation ideas), writes them to memory, then commits everything together. Use when the user invokes /session-learnings, or signals the work itself is finished: "wrap things up", "end session", "ship it", "we're done", "open a PR/MR". NOT for a routine commit inside ongoing work — "commit this", "commit and push", "save that" — which is plain git with no review.
 ---
 
 When it is unclear whether the work is finished, commit first and offer the
