@@ -30,6 +30,7 @@ DESIRED_HOMEBREW_FORMULAE=(
   'reattach-to-user-namespace'
   'opentofu'
   'tmux'
+  'uv'
   'wireguard-tools'
   'wget'
 )
