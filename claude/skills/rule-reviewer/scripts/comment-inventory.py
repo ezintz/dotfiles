@@ -47,7 +47,7 @@ for _ext in (".py .sh .bash .zsh .fish .rb .pl .r .yaml .yml .toml .tf .tfvars "
 for _ext in (".html .htm .xml .axaml .xaml .csproj .fsproj .vbproj .props .targets "
              ".slnx .vue .svelte .svg .plist .resx .config").split():
     SYNTAX[_ext] = XML
-for _ext in (".sql .psql",):
+for _ext in ".sql .psql".split():
     SYNTAX[_ext] = SQL
 SYNTAX[".css"] = ([], [("/*", "*/", "block")])
 SYNTAX[".scss"] = C_LIKE
