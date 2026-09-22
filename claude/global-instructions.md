@@ -17,7 +17,7 @@ Delete one that does, including a pre-existing one.
 in a pointer.**
 "See docs/plan.md §2c", "Phase 2", "as discussed above" are empty to a reader without that
 context; whatever is then unrecoverable was never in it. Write the reasoning in, demote references
-to provenance (parentheses or a `Refs:` trailer), and name things by what they are — "Supercharger
+to provenance (parentheses or a `Refs:` trailer), and name things by what they are — "Bellhop
 (the batch-import path)", not "the wrapper we added".
 
 # .NET (Homebrew install)

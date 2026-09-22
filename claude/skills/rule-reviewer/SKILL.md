@@ -60,17 +60,18 @@ relevant only to some tasks, it wants to be a skill.
 A scoped rule has a second budget the always-on total never shows: it is
 injected **in full** on every edit to every file its globs match. Compare the
 analyser's match count against the number of files the rule actually discusses.
-A rule of 30 lines about libmpv callbacks scoped to `src/**` bills all 148
-source files for knowledge that concerns 5 — scoped, entirely legitimate
-content, and still the most expensive thing in the directory.
+A rule of 30 lines about one client library's retry semantics, scoped to
+`src/**`, bills every source file in the tree for knowledge that concerns a
+handful — scoped, entirely legitimate content, and still the most expensive
+thing in the directory.
 
 Two shapes to flag:
 
 - **A glob far broader than the subject** — a whole project directory or
   `src/**` when the rule names a handful of files. Narrowing costs nothing.
-- **A large rule scoped onto a hot file.** A 3,000-word rule listing the app's
-  busiest view-model is paid on every unrelated edit to it. If only one section
-  concerns that file, split the rule and scope the halves separately.
+- **A large rule scoped onto a hot file.** A 3,000-word rule pinned to the one
+  file every feature touches is paid on every unrelated edit to it. If only one
+  section concerns that file, split the rule and scope the halves separately.
 
 Report per-edit cost as the mean rule words loaded per matching file, before
 and after. That is the number the user feels on ordinary work.
@@ -158,8 +159,7 @@ particulars — each names nothing to a reader who was not there, and a rule is
 read cold on every matching edit forever after. The analyser flags the
 phrasings; the unglossed name and the one-repo assumption only show up on
 reading. This is a rewrite, not a cut: keep the invariant, drop the pointer to
-where it came from, and state the name — "Supercharger (the batch-import
-path)".
+where it came from, and state the name — "Bellhop (the batch-import path)".
 
 ### 8. Placement — should this be a rule at all?
 
