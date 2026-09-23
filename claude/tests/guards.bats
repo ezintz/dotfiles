@@ -1271,3 +1271,74 @@ allowlist() {
   TEST_CWD="$BATS_TEST_TMPDIR/other-project"
   assert_ask 'mysql -h bench-db.internal -e "TRUNCATE TABLE bench_runs"'
 }
+
+# --- heads and wrappers that can execute ------------------------------------
+#
+# The failure these pin is a silent one: a head the guard treats as inert (or a
+# wrapper it treats as a lookup) makes the segment classify as read-only, so the
+# mutation never prompts. Each case therefore has a mirror that must stay quiet,
+# because the cheap way to "fix" a miss here is to classify everything.
+
+@test "command is a transparent wrapper, not a lookup" {
+  assert_ask 'command kubectl --context wonka-factory delete pod hamster-runner-1'
+  assert_ask 'command helm --kube-context wonka-factory uninstall pancake-service'
+  assert_reason 'command kubectl --context wonka-factory delete pod hamster-runner-1' 'wonka-factory'
+}
+
+@test "command -v stays a lookup" {
+  assert_pass 'command -v kubectl'
+  assert_pass 'command -v helm && echo found'
+}
+
+@test "escaped quotes do not hide the binary or the verb" {
+  assert_ask 'sh -c "kubectl --context wonka-factory \"delete\" pod hamster-runner-1"'
+  assert_ask 'ssh pancake-host "kubectl --context wonka-factory \"delete\" pod hamster-runner-1"'
+}
+
+@test "heads that exec: find/sed/awk carry a real invocation" {
+  assert_ask 'find . -name "*.yaml" -exec kubectl --context wonka-factory delete -f {} ;'
+  assert_ask 'sed -n "1e kubectl --context wonka-factory delete pod hamster-runner-1" notes.md'
+  assert_ask 'awk "BEGIN{system(\"kubectl --context wonka-factory delete pod hamster-runner-1\")}"'
+}
+
+@test "heads that only read: searching for a mutation is not running one" {
+  assert_pass 'sed -n "/kubectl delete/p" runbook.md'
+  assert_pass 'awk "/kubectl delete/ {print}" runbook.md'
+  assert_pass 'find . -name "*.yaml" -print'
+  assert_pass 'grep -r "kubectl --context wonka-factory delete" docs/'
+}
+
+@test "git is not blanket-inert: only its search subcommands are skipped" {
+  assert_pass 'git grep "kubectl --context wonka-factory delete"'
+  assert_pass 'git log -S "openstack server delete pancake-1"'
+  assert_pass 'git show HEAD -- deploy.yaml'
+}
+
+# --- heredoc bodies ---------------------------------------------------------
+#
+# A body is data being written, so it must not prompt — but an *unquoted*
+# delimiter still expands, and any body can hand the binary to an interpreter.
+# Those two are the holes; the prose cases are what keeps the fix honest.
+
+@test "heredoc: an unquoted delimiter still expands, so the substitution runs" {
+  assert_ask "$(printf 'python3 - <<EOF\nx = "$(kubectl --context wonka-factory delete pod hamster-runner-1)"\nEOF')"
+  assert_ask "$(printf 'cat > out.txt <<EOF\n`helm --kube-context wonka-factory uninstall pancake-service`\nEOF')"
+  # The target comes from the substitution itself, not from a guess.
+  assert_reason "$(printf 'python3 - <<EOF\nx = "$(kubectl --context wonka-factory delete pod hamster-runner-1)"\nEOF')" 'wonka-factory'
+}
+
+@test "heredoc: a quoted delimiter expands nothing" {
+  assert_pass "$(printf "python3 - <<'PY'\nx = \"\$(kubectl --context wonka-factory delete pod hamster-runner-1)\"\nPY")"
+  assert_pass "$(printf "cat > notes.md <<'DOC'\nrun \`helm --kube-context wonka-factory uninstall pancake-service\` by hand\nDOC")"
+}
+
+@test "heredoc: a body that shells out to the binary still asks" {
+  assert_ask "$(printf "python3 - <<'PY'\nimport subprocess\nsubprocess.run(['kubectl','delete','pod','hamster-runner-1'])\nPY")"
+  assert_ask "$(printf "ruby - <<'RB'\nsystem(\"helm uninstall pancake-service\")\nRB")"
+  assert_ask "$(printf "python3 - <<'PY'\nimport os\nos.system('openstack server delete pancake-1')\nPY")"
+}
+
+@test "heredoc: a data body that merely names the binary stays quiet" {
+  assert_pass "$(printf "cat > chart.yaml <<'EOF'\napiVersion: v2\nname: kubectl-helper\ndescription: wraps kubectl delete for operators\nEOF")"
+  assert_pass "$(printf "cat > .gitlab-ci.yml <<'EOF'\nscript:\n  - echo \"would run kubectl delete here\"\nEOF")"
+}

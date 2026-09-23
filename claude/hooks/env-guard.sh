@@ -66,14 +66,24 @@ GUARD_RAW_CMD="$GUARD_CMD"
 # Heredoc bodies are data being written, not commands being run — strip them
 # before anything else looks at the command line. Guarded by a glob so the
 # common case pays nothing.
+GUARD_HEREDOC_BODY=''
+GUARD_HEREDOC_EXPANSIONS=''
 case "$GUARD_CMD" in
-  *'<<'*) GUARD_CMD=$(guard_strip_heredocs "$GUARD_CMD") ;;
+  *'<<'*)
+    GUARD_CMD=$(guard_strip_heredocs "$GUARD_CMD")
+    # Kept for guard_heredoc_shells_out: a body that hands the binary to an
+    # interpreter's exec API is not data, whatever it is being written into.
+    GUARD_HEREDOC_BODY=$(guard_heredoc_bodies "$GUARD_RAW_CMD")
+    # An unquoted delimiter still expands, so the substitutions inside that body
+    # are commands the shell runs before the body is ever written anywhere.
+    GUARD_HEREDOC_EXPANSIONS=$(guard_heredoc_expansions "$GUARD_RAW_CMD") ;;
 esac
 
 # Segment once for all profiles, and add the contents of any script the command
 # executes, so `bash deploy.sh` is judged on what deploy.sh actually does.
 GUARD_ALL_SEGMENTS=$(guard_segments "$GUARD_CMD")
 GUARD_ALL_SEGMENTS="$GUARD_ALL_SEGMENTS
+$GUARD_HEREDOC_EXPANSIONS
 $(guard_script_bodies "$GUARD_ALL_SEGMENTS")
 $(guard_make_recipes "$GUARD_ALL_SEGMENTS")"
 
@@ -177,11 +187,24 @@ for guard_profile in "${GUARD_PROFILES[@]}"; do
   # guarded binaries and skip the whole profile without a single fork. Matched
   # against the expanded segments, not the raw command line — `bash deploy.sh`
   # never says "kubectl", but the script it runs does.
+  # The heredoc body is part of the haystack even though it was stripped from
+  # the segments: guard_heredoc_shells_out below looks at nothing else, so a
+  # profile filtered out here would never get to run it.
   guard_hit=0
   for guard_b in $GUARD_BINS; do
-    case "$GUARD_ALL_SEGMENTS" in *"$guard_b"*) guard_hit=1; break ;; esac
+    case "$GUARD_ALL_SEGMENTS$GUARD_HEREDOC_BODY" in *"$guard_b"*) guard_hit=1; break ;; esac
   done
   [ $guard_hit -eq 1 ] || continue
+
+  # A heredoc body that hands this binary to an interpreter's exec API runs it,
+  # and the body is too opaque to resolve a target from — so it asks, naming the
+  # binary rather than a cluster it cannot determine.
+  if [ -n "$GUARD_HEREDOC_BODY" ]; then
+    for guard_b in $GUARD_BINS; do
+      guard_heredoc_shells_out "$guard_b" || continue
+      guard_ask "A heredoc body shells out to $guard_b (its target cannot be read from the body). $GUARD_REASON_TAIL"
+    done
+  fi
 
   # Every segment is classified, dry-run-checked and target-resolved on its own.
   # Judging the whole command line by whichever mutation happens to be written

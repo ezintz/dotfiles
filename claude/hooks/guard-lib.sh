@@ -193,6 +193,87 @@ $1
 EOF
 }
 
+# Interpreter APIs that hand a string to a shell or exec a program. Deliberately
+# NOT including backticks or $( ) — those are handled precisely by
+# guard_heredoc_expansions, and inside a *quoted* heredoc the shell never
+# evaluates them anyway.
+GUARD_EXEC_HINTS='os\.system|os\.popen|os\.exec|os\.spawn|subprocess|pty\.spawn|commands\.getoutput|shell_exec|proc_open|passthru|popen\(|system\(|exec\(|qx[({/|]|%x[({]|Open3|IO\.popen|Kernel#?\.?(system|spawn)|child_process|execSync|spawnSync|execFileSync|(sh|bash|zsh|ash|dash)[[:space:]]+-c'
+
+# guard_heredoc_bodies <command> [unquoted]
+# Prints heredoc bodies, one line each. With "unquoted", only bodies whose
+# delimiter was *unquoted* (`<<EOF`, not `<<'EOF'`/`<<"EOF"`/`<<\EOF`) — the
+# shell expands `$( )` and backticks inside those and not inside the others.
+#
+# The walk mirrors guard_strip_heredocs; it runs only under the same `<<` glob,
+# so the common command pays nothing for it.
+guard_heredoc_bodies() {
+  local want="${2:-all}"
+  local line delim='' dashed=0 quoted=0 trimmed spec body
+  while IFS= read -r line; do
+    if [ -n "$delim" ]; then
+      trimmed="$line"
+      if [ "$dashed" = 1 ]; then
+        while [ "${trimmed#	}" != "$trimmed" ]; do trimmed="${trimmed#	}"; done
+      fi
+      [ "$trimmed" = "$delim" ] && { delim=''; continue; }
+      if [ "$want" = all ] || [ "$quoted" = 0 ]; then printf '%s\n' "$line"; fi
+      continue
+    fi
+    case "$line" in
+      *'<<'*)
+        spec=$(printf '%s' "$line" | sed -nE 's/.*<<(-?)[[:space:]]*("[^"]+"|'"'"'[^'"'"']+'"'"'|\\[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*).*/\1 \2/p')
+        [ -n "$spec" ] || continue
+        case "$spec" in
+          -*) dashed=1 ;;
+          *)  dashed=0 ;;
+        esac
+        body="${spec#* }"
+        case "$body" in
+          \"*|\'*|\\*) quoted=1 ;;
+          *)           quoted=0 ;;
+        esac
+        # Strip whichever wrapper marked it quoted.
+        body="${body#[\"\'\\]}"; body="${body%[\"\']}"
+        delim="$body" ;;
+    esac
+  done <<EOF
+$1
+EOF
+}
+
+# guard_heredoc_expansions <command> — the command substitutions the shell would
+# actually run while writing an unquoted heredoc, one per line.
+#
+# `cat > runbook.md <<EOF … kubectl delete … EOF` is documentation and must stay
+# silent (guard_strip_heredocs drops the whole body for exactly that reason).
+# But an *unquoted* delimiter still expands, so
+#   python3 - <<EOF
+#   x = "$(kubectl --context production delete pod api)"
+#   EOF
+# runs the delete before python3 ever sees a byte. Pulling just the substitution
+# out gives the classifier a real invocation with a resolvable target, instead of
+# either missing it or prompting on prose.
+guard_heredoc_expansions() {
+  guard_heredoc_bodies "$1" unquoted \
+    | grep -oE '\$\([^()]*\)|`[^`]*`' 2>/dev/null \
+    | sed -e 's/^\$(//' -e 's/^`//' -e 's/)$//' -e 's/`$//'
+}
+
+# guard_heredoc_shells_out <binary>
+# 0 when a heredoc body both mentions <binary> and calls an interpreter API that
+# can run it — `python3 - <<'PY' … subprocess.run(['kubectl','delete',…]) … PY`.
+# The body is opaque: we cannot tell which target it would hit, or whether the
+# mention is even the one executed, so the caller asks rather than guessing.
+# Writing chart YAML or a pipeline file trips neither half and stays silent.
+guard_heredoc_shells_out() {
+  local bin="$1"
+  [ -n "${GUARD_HEREDOC_BODY:-}" ] || return 1
+  printf '%s' "$GUARD_HEREDOC_BODY" | grep -qE "$GUARD_EXEC_HINTS" || return 1
+  printf '%s' "$GUARD_HEREDOC_BODY" \
+    | grep -qE "(^|[^A-Za-z0-9_./-])$bin([^A-Za-z0-9_-]|\$)" || return 1
+  return 0
+}
+
 # --- executed scripts -------------------------------------------------------
 
 # guard_script_path <segment> — the script file this segment executes, if any.
@@ -363,6 +444,13 @@ guard_tokenize() {
   for raw in $seg; do
     t="${raw//\"/}"
     t="${t//\'/}"
+    # Backslashes go too. A nested quote is routinely written escaped —
+    # `sh -c "kubectl --context prod \"delete\" pod x"` — and stripping only the
+    # quote characters leaves `\kubectl` / `\delete`, which match neither the
+    # binary nor any subcommand vocabulary, so the whole invocation slips past.
+    # Parameter expansion, not `tr`: this runs per token of every segment of
+    # every command, and a fork here costs ~8ms per call.
+    t="${t//\\/}"
     [ -n "$t" ] && GUARD_TOKENS[${#GUARD_TOKENS[@]}]="$t"
   done
 }
@@ -380,9 +468,14 @@ guard_invocation() {
     case "$t" in
       -*) break ;;
       [A-Za-z_]*=*) i=$((i + 1)); continue ;;                # FOO=bar prefix
-      sudo|env|nohup|time|exec|stdbuf|xargs|doas)
+      sudo|env|nohup|time|exec|stdbuf|xargs|doas|command)
         # Transparent only when followed by a plain word: `command -v helm`
         # and `xargs -n1 kubectl` keep their own command word.
+        #
+        # `command` belongs here, not only in guard_embedded_invocation's skip
+        # list: `command kubectl delete pod x` really does run kubectl, and
+        # being treated as a lookup made it a free bypass. The `-*` break below
+        # is what still keeps `command -v helm` quiet.
         if [ $((i + 1)) -lt $n ]; then
           case "${GUARD_TOKENS[$((i + 1))]}" in
             -*) break ;;
@@ -633,6 +726,14 @@ EOF
 #
 # Segments headed by a command that only prints or searches text are skipped:
 # `echo "kubectl delete …"` is documentation, not an invocation.
+#
+# `find`, `sed` and `awk` are deliberately NOT in that list — each can run a
+# command built from its own arguments (`find … -exec`, GNU `sed '1e cmd'` and
+# `s///e`, `awk '{system(…)}'`), so a segment headed by one of them still needs
+# classifying. They cost nothing in false positives: a search pattern like
+# `sed -n "/kubectl delete/p"` tokenizes to `delete/p`, which is not an exact
+# match in any subcommand vocabulary. `fd` and `xargs` are likewise absent
+# because `fd -x` and `xargs` exec by design.
 guard_embedded_invocation() {
   local bin="$1" seg="$2" head t i n
   guard_tokenize "$seg"
@@ -640,9 +741,17 @@ guard_embedded_invocation() {
   [ $n -gt 0 ] || return 1
   head="${GUARD_TOKENS[0]##*/}"
   case "$head" in
-    echo|printf|cat|grep|egrep|fgrep|rg|ag|command|which|type|whereis|man|sed|awk|\
-    head|tail|less|more|jq|yq|ls|find|history|comm|diff|wc|sort|uniq|tee|column|\
+    echo|printf|cat|grep|egrep|fgrep|rg|ag|command|which|type|whereis|man|\
+    head|tail|less|more|jq|yq|ls|history|comm|diff|wc|sort|uniq|tee|column|\
     \#*) return 1 ;;
+    # `git grep` and `git log -S` search text like the tools above; every other
+    # git subcommand is left to be classified, since `git` is not blanket-inert.
+    git)
+      if [ $n -gt 1 ]; then
+        case "${GUARD_TOKENS[1]}" in
+          grep|log|show|blame|diff|config|ls-files) return 1 ;;
+        esac
+      fi ;;
   esac
   i=0
   while [ $i -lt $n ]; do
