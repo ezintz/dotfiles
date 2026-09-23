@@ -1342,3 +1342,35 @@ allowlist() {
   assert_pass "$(printf "cat > chart.yaml <<'EOF'\napiVersion: v2\nname: kubectl-helper\ndescription: wraps kubectl delete for operators\nEOF")"
   assert_pass "$(printf "cat > .gitlab-ci.yml <<'EOF'\nscript:\n  - echo \"would run kubectl delete here\"\nEOF")"
 }
+
+# --- terraform verbs added after the guard was written ----------------------
+
+@test "terraform: modules and query only print" {
+  assert_pass 'terraform modules'
+  assert_pass 'terraform modules -json'
+  assert_pass 'terraform query -var-file=prod.tfvars'
+}
+
+@test "terraform: stacks reads pass" {
+  assert_pass 'terraform stacks list'
+  assert_pass 'terraform stacks init'
+  assert_pass 'terraform stacks validate'
+  assert_pass 'terraform stacks fmt'
+  assert_pass 'terraform stacks diagnostics -id stc-pancake'
+  assert_pass 'terraform stacks configuration list'
+  assert_pass 'terraform stacks deployment-run show'
+  assert_pass 'terraform stacks deployment-step artifacts'
+}
+
+@test "terraform: stacks mutations ask" {
+  assert_ask 'terraform stacks create'
+  assert_ask 'terraform stacks configuration upload'
+  assert_ask 'terraform stacks deployment-group approve-all-plans'
+  assert_ask 'terraform stacks deployment-group rerun'
+  assert_ask 'terraform stacks deployment-run cancel'
+}
+
+@test "terraform: an unrecognised stacks subcommand asks rather than passing" {
+  assert_ask 'terraform stacks demolish-everything'
+  assert_ask 'terraform stacks deployment-run detonate'
+}

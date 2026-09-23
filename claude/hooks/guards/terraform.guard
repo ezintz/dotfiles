@@ -10,15 +10,38 @@ GUARD_BINS='terraform tofu'
 GUARD_STYLE='vocab'
 
 # First exact token match wins, so `terraform show apply.tfplan` reads as `show`.
-GUARD_VOCAB='init|validate|plan|show|output|fmt|graph|console|providers|version|help|test|metadata|get|login|logout|apply|destroy|import|taint|untaint|refresh|force-unlock|state|workspace'
+GUARD_VOCAB='init|validate|plan|show|output|fmt|graph|console|providers|version|help|test|metadata|get|login|logout|modules|query|stacks|apply|destroy|import|taint|untaint|refresh|force-unlock|state|workspace'
 GUARD_DESTRUCTIVE='apply|destroy|import|taint|untaint|refresh|force-unlock'
 GUARD_VALFLAGS='-var|-var-file|-state|-state-out|-backup|-target|-replace|-out|-lock-timeout|-parallelism|-backend-config|-plugin-dir|-from-module'
 GUARD_REASON_TAIL='Terraform has no local-safe target; explicit user confirmation required.'
 
 # Subcommands whose destructiveness depends on the word after them.
 guard_classify_extra() {
-  local a1
+  local a1 a2
   case "$GUARD_SUB" in
+    # `stacks` is a command group, not a verb: `stacks list` reads, `stacks
+    # create` makes one, and the manage groups carry their own verbs a level
+    # further down. Unlike state/workspace above, the default here is to ask —
+    # HCP Terraform keeps adding subcommands, and an unrecognised one silently
+    # reading as safe is exactly the drift the vocab test exists to catch.
+    # `modules` and `query` need no case: both only print (query reads remote
+    # infrastructure and writes nothing), so the GUARD_DESTRUCTIVE default of
+    # read-only is already right for them.
+    stacks)
+      a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
+      case "$a1" in
+        # Local or read-only: init/validate/fmt touch the working directory the
+        # way their top-level namesakes do, providers-lock only writes the lock
+        # file, and diagnostics/list/version print.
+        ''|init|validate|fmt|list|version|diagnostics|providers-lock) return 1 ;;
+        configuration|deployment-group|deployment-run|deployment-step)
+          a2=$(guard_arg_at 2 "$GUARD_VALFLAGS")
+          case "$a2" in
+            ''|list|show|watch|fetch|artifacts) return 1 ;;
+            *) GUARD_ACTION="stacks $a1 $a2"; return 0 ;;
+          esac ;;
+        *) GUARD_ACTION="stacks $a1"; return 0 ;;
+      esac ;;
     state)
       a1=$(guard_arg_at 1 "$GUARD_VALFLAGS")
       case "$a1" in
