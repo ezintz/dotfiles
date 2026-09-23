@@ -1,166 +1,205 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
 ## What This Repo Is
 
-A macOS dotfiles repository that manages shell configuration (Zsh/Prezto), Git, SSH, Tmux, and system defaults. The main mechanism is symlinking files from this repo into `~`.
+A macOS dotfiles repository managing shell config (Zsh/Prezto), Git, SSH, Tmux,
+macOS defaults, and the global Claude Code setup. The mechanism is symlinking
+files from this repo into `~`, so **editing a file here changes the live
+configuration immediately**.
 
 ## Installation & Usage
 
 ```bash
-# Initial install or re-run after changes
-bin/dotfiles
-
-# Skip specific phases
-bin/dotfiles --no-packages   # skip Homebrew/npm installs
-bin/dotfiles --no-sync       # skip git pull
-bin/dotfiles --no-links      # skip symlink creation
+bin/dotfiles                     # install, or re-run after changes
+bin/dotfiles --no-packages       # skip Homebrew/npm installs
+bin/dotfiles --no-sync           # skip git pull
+bin/dotfiles --no-links          # skip symlink creation
 bin/dotfiles --no-configuration  # skip macOS defaults
 ```
 
-After setup, `bin/` is in PATH (via `zprofile`), so `dotfiles` works as a command from anywhere.
+`bin/` is on PATH via `zprofile`, so `dotfiles` works from anywhere.
+After cloning: `git submodule update --init --recursive`.
 
-There is no linting. The one test suite is `claude/tests/guards.bats`, which pins
-the behaviour of the Claude Code env guards:
+## Testing
+
+There is no linting. The one suite covers the Claude Code env guards:
 
 ```bash
-bats claude/tests/guards.bats   # bats-core is in DESIRED_HOMEBREW_FORMULAE
+bats claude/tests/guards.bats    # bats-core is in DESIRED_HOMEBREW_FORMULAE
 ```
 
-Run it after any change under `claude/hooks/`.
+**Run it after any change under `claude/hooks/`.**
 
-Most cases are behavioural (this command passes, that one asks). The last three
-are different: they scrape `kubectl`/`helm`/`tofu --help` for the tool's real
-subcommand list and fail if any verb is missing from that guard's
-`GUARD_VOCAB`. A verb the guard has never heard of matches nothing, so the
-segment is skipped and silently treated as read-only — the one failure a
-hand-written case can't reach, because you can't test for a verb you don't know
-exists. They `skip` when the binary isn't installed, and fail if the scrape
-returns implausibly few verbs, so a stale parser can't make them vacuous.
+Most cases are behavioural — this command passes, that one asks. The vocab-drift
+cases are different: they scrape `kubectl`/`helm`/`tofu --help` and fail if a
+real subcommand is missing from that guard's `GUARD_VOCAB`. A verb the guard has
+never heard of matches nothing and is silently treated as read-only, which is the
+one failure a hand-written case cannot reach — you cannot test for a verb you do
+not know exists. Keep them working rather than deleting them when they go red.
 
 ## Architecture
 
-### Symlink Strategy
+### Symlinks
 
-`bin/dotfiles` symlinks files directly into `~`. For example:
-- `git/gitconfig` → `~/.gitconfig` (also gitignore, gitattributes, gitk, tigrc)
-- `ssh/config` → `~/.ssh/config`
-- `tmux/tmux.conf` → `~/.tmux.conf`
+`bin/dotfiles` symlinks config into `~` (`git/gitconfig` → `~/.gitconfig`,
+`ssh/config` → `~/.ssh/config`, `tmux/tmux.conf` → `~/.tmux.conf`, …).
 
-`.zshrc` is a special case: it is only symlinked if `~/.zshrc` does not already exist, allowing machine-local shell config to live there without being overwritten.
+- `.zshrc` is linked **only if `~/.zshrc` does not already exist**, so
+  machine-local shell config can live there untracked.
+- `~/.dotfiles-private` is an optional untracked overlay repo holding
+  `gitconfig.local`, `zpreztorc.local`, `tmux.conf.local`, `zprofile.local`;
+  `mirror_local_files` links them alongside the tracked config.
+- `~/.gitauthor` (untracked) supplies the git identity, created interactively on
+  first setup.
 
-Editing files in this repo immediately affects the live configuration.
+### Shell (Prezto)
 
-An optional private overlay directory, `~/.dotfiles-private` (a separate, non-tracked repo), can hold `gitconfig.local`, `zpreztorc.local`, `tmux.conf.local`, and `zprofile.local`. If present, `bin/dotfiles` symlinks them into `~` alongside the tracked config (`mirror_local_files` in `bin/dotfiles`).
+`prezto/` is a submodule of a custom fork (`github.com/ezintz/prezto`); runtime
+configs live in `prezto/runcoms/` — `zpreztorc` (modules, the usual file to
+edit), `zprofile` (PATH, env, tool integrations), `zshrc` (sources Prezto).
+`~/.zprofile.local` is sourced at the end of `zprofile` for machine-specific env.
 
-### Shell Configuration (Prezto)
+### Other
 
-`prezto/` is a git submodule pointing to a custom fork (`github.com/ezintz/prezto`). Runtime configs live in `prezto/runcoms/`:
-- `zpreztorc` — which Prezto modules are loaded (the main file to edit for shell behavior)
-- `zprofile` — PATH, environment variables, tool integrations (OrbStack, krew, kubeconfig)
-- `zshrc` — minimal, just sources Prezto init
+- `ssh/config` includes `~/.ssh/config.d/*`; per-host configs go in
+  `ssh/config.d/`, which is gitignored selectively.
+- `bin/_macos` sets macOS defaults; sourced by `bin/dotfiles`.
+- Homebrew formulae, casks and npm packages are defined **inline in
+  `bin/dotfiles`**, not a Brewfile.
+- `iterm2/` tracks the prefs plist and colour scheme — import manually, nothing
+  applies them.
+- Submodules: `prezto`, `tmux/plugins/{tpm,tmux-sensible,tmux-yank}`.
 
-`~/.zprofile.local` is sourced at the end of `zprofile` if it exists — use it for machine-specific env vars that should not be tracked in this repo.
+## Claude Code Configuration (`claude/`)
 
-### Modular SSH Config
+Manages the **global** `~/.claude/` setup, not project-local config.
 
-`ssh/config` includes all files from `~/.ssh/config.d/*`. Per-host or per-domain configs belong in `ssh/config.d/`. The `.gitignore` there allows selectively committing host configs.
+| Path | Linked as | Note |
+|---|---|---|
+| `global-instructions.md` | `~/.claude/CLAUDE.md` | renamed in-repo on purpose |
+| `hooks/` | `~/.claude/hooks/` | the env guard |
+| `skills/`, `agents/`, `rules/`, `refs/` | per-entry | **not** whole directories |
+| `settings.json` | deep-merged into `~/.claude/settings.json` | **not** symlinked |
+| `mcp.json` | deep-merged into `~/.claude.json` | user-scope MCP servers |
+| `statusline-command.sh` | `~/.claude/statusline-command.sh` | |
 
-### macOS System Defaults
+- **`global-instructions.md` is renamed** so Claude Code's auto-discovery does
+  not load it a second time as a project file while working in this repo. It
+  costs context in *every session of every repo*, so it holds only what changes
+  behaviour anywhere — command discipline, tool usage. Build/test/extend
+  knowledge belongs in this file instead. When in doubt: would this help in an
+  unrelated repo six months from now? If not, it goes here.
+- **Per-entry linking** for `skills/`, `agents/`, `rules/`, `refs/`, because
+  `~/.claude/skills` and `~/.claude/rules` also contain plugin-managed entries
+  (e.g. context7) that must not be clobbered. `refs/` holds docs too long to
+  inline; they are not auto-discovered, so a skill or rule must link them by
+  relative path (`../../refs/<name>.md` from `claude/skills/<name>/SKILL.md`).
+- **`settings.json` is deep-merged** via `jq` (`merge_json` in `bin/dotfiles`).
+  Tracked keys win; machine-local keys already present (`model`, `effortLevel`)
+  survive. Rule syntax is `Bash(cmd *)` — the trailing **space-star** enforces a
+  word boundary, so `Bash(ansible *)` does not match `ansible-lint`, while
+  `Bash(make deploy*)` deliberately also matches `make deploy-prod`. Rules are
+  matched per subcommand of a compound command, and `ask` rules still prompt even
+  when a hook returns `allow`, so the two layers compose.
+- **MCP secrets are never tracked.** `claude/mcp.json` references them as
+  `${VAR}` and they are exported from `~/.zprofile.local`.
+- **`bootstrap.sh` cannot read the repo** (it is fetched over HTTP for machines
+  without a clone), so its `PROFILES` list must be updated by hand when a guard
+  profile is added, and its `ask_rules` list when a wrapper is added to
+  `settings.json`. Its merges are additive — anything the user added by hand
+  survives.
+- `bin/claude-export-skills` zips `~/.claude/skills/*` for claude.ai. Not run by
+  `bin/dotfiles`.
 
-`bin/_macos` is a standalone script (~850 lines) that sets macOS defaults for Dock, Finder, Safari, etc. It's sourced by `bin/dotfiles` during the configuration phase.
+### The env guard (`claude/hooks/`)
 
-### Git Submodules
+A PreToolUse hook: a destructive command aimed at a non-local target returns
+`permissionDecision: "ask"` instead of running under the ambient permission mode.
 
-- `prezto` — Zsh framework (custom fork)
-- `tmux/plugins/tpm` — Tmux Plugin Manager
-- `tmux/plugins/tmux-sensible`
-- `tmux/plugins/tmux-yank`
+- `env-guard.sh` — the **only** registered hook. Reads the tool JSON once,
+  expands the command (script bodies, make recipes, heredocs, pipes), and
+  dispatches to every `guards/*.guard` profile.
+- `guard-lib.sh` — command-line parsing: segmentation, wrapper/`eval` detection,
+  exact-token subcommand matching, flag-value skipping. This is what keeps
+  `helm template test chart` from reading as `helm test`.
+- `guards/<tool>.guard` — one profile per tool: verb vocabulary as data plus
+  `guard_resolve_target()` and optional `guard_classify_extra()` / `guard_reason()`.
+  Pick a classification style with `GUARD_STYLE`: `vocab` (fixed subcommand list),
+  `positional` (object-verb grammar), or `sql` (the verb is a SQL keyword that
+  never appears in argv, so `guard_classify_extra` *is* the classifier).
+  Files prefixed `_` are shared helpers; the dispatcher only globs `*.guard`.
 
-After cloning, run `git submodule update --init --recursive`.
+Both sources are heavily commented at the point of use — **read the function
+before changing it**; the rationale for every non-obvious branch is there.
 
-### Claude Code Configuration (`claude/`)
+**Per-project allowlist** — `~/.claude/guard-allow.conf`, one rule per line:
 
-`claude/` manages the *global* (`~/.claude/`) Claude Code setup, not project-local config:
-- `bootstrap.sh` — standalone installer for machines without this repo cloned (`curl -fsSL .../claude/bootstrap.sh | sh`); installs global instructions plus the env-guard hook and registers it in `~/.claude/settings.json`. Safe to re-run. It fetches over HTTP and so cannot glob a remote directory or read the repo: its `PROFILES` list must be updated by hand when a guard profile is added, and its `ask_rules` list when a wrapper is added to `settings.json`. Both merges are additive — a hook, plugin or ask rule the user added by hand is never dropped.
-- `global-instructions.md` → symlinked to `~/.claude/CLAUDE.md`. It is named differently in-repo on purpose, so Claude Code's auto-discovery doesn't also load it a second time as a project file when working inside this dotfiles repo. **It costs context in every session of every repo**, so it holds only things that change how Claude behaves *anywhere* — command discipline, tool usage. How something here is built, tested or extended is maintenance knowledge and belongs in this file instead; it is loaded automatically whenever the work is actually happening in this repo. When in doubt: would this help in an unrelated repo six months from now? If not, it goes here.
-- `hooks/` — the PreToolUse env guard: destructive commands aimed at a non-local target get `permissionDecision: "ask"` instead of running under the ambient permission mode.
-  - `env-guard.sh` is the **only** registered hook. It reads the tool JSON once and dispatches to every profile in `hooks/guards/*.guard`. One process per Bash call instead of one per guarded tool (~13ms vs ~141ms when nothing matches).
-  - `guard-lib.sh` holds the command-line parsing — segmentation, wrapper/`eval` detection, exact-token subcommand matching, flag-value skipping. This is the part that keeps `helm template test chart` from reading as `helm test`.
-  - **Writing ≠ executing.** Heredoc bodies are stripped before classification (`guard_strip_heredocs`), so `cat > runbook.md <<EOF … kubectl --context production delete … EOF` documents a command without prompting. The line that *opens* the heredoc is kept, because `kubectl apply -f - <<EOF` really does apply. Two things survive the strip, because they are execution and not writing: with an **unquoted** delimiter the shell still expands the body, so `guard_heredoc_expansions` pulls each `$( )`/backtick substitution back out as its own segment — it classifies with a real resolved target, and prose in the body is untouched because prose is not a substitution. And any body, quoted or not, that hands a guarded binary to an interpreter's exec API (`subprocess`, `os.system`, `system(`, `sh -c`, …) asks via `guard_heredoc_shells_out`: the body is opaque, so the prompt names the binary rather than a target it cannot read. Naming a binary in data (`name: kubectl-helper`) trips neither, since it is neither a substitution nor an exec call. Note the pre-filter haystack in `env-guard.sh` includes the stripped body for exactly this reason — filter on the segments alone and the shell-out net is never reached. Conversely `guard_script_bodies` reads the contents of scripts the command executes (`bash deploy.sh`, `./deploy.sh`, `source x.sh`) — one level deep, bounded to 4 files × 64 KiB — so a destructive command is caught when it runs from a file, not when it is written to one. `guard_make_recipes` does the same for `make <target>`: it reads the target's recipe out of the Makefile and classifies *that*, so `make test` that deletes a namespace asks and `make deploy` that only rsyncs does not. Bounded to 4 targets, one level deep, with no variable expansion — a recipe of `$(KUBECTL) delete` is not seen, which is what the `make` entries in `settings.json` `permissions.ask` back up.
-  - **An inert head is a bypass.** `guard_embedded_invocation` skips segments headed by something that only prints or searches, but `find`, `sed`, `awk`, `fd` and `xargs` each run a command built from their own arguments (`find … -exec`, GNU `sed '1e cmd'`, `awk '{system(…)}'`), so they are deliberately *not* on that list — and `git` is only skipped for its search subcommands, not blanket. False positives are not the risk they look like: a search pattern like `sed -n "/kubectl delete/p"` tokenizes to `delete/p`, which exact-matches nothing in any vocabulary. Separately `command` is a transparent wrapper in `guard_invocation` (`command kubectl delete` really runs kubectl); it stays on the skip list too, and `command -v helm` stays quiet because the `-*` break fires first.
-  - **`guard_tokenize` strips backslashes as well as quotes.** A nested quote is routinely written escaped — `sh -c "kubectl --context prod \"delete\" pod x"` — and stripping only the quote characters leaves `\kubectl`/`\delete`, matching neither the binary nor any subcommand, so the whole invocation slips past.
-  - Keep `guard_tokenize` fork-free. It runs for every segment of every command times every profile; forking `printf | tr` per token there cost ~8ms per call on its own.
-  - **Benchmark string work under `/bin/bash`, not the Homebrew bash on `$PATH`.** The hook runs under its shebang, i.e. bash 3.2, where `${var//[chars]/}` is quadratic: stripping `;(),` from a single 9 KB word takes **44 seconds** there against 31ms under bash 5, and a `-e "delete … where id in (1,2,…,2000)"` is exactly one such word. That is not a slow hook, it is a Bash tool call that never returns. Per-character loops (`${s:$i:1}` plus `out="$out$c"`) are quadratic twice over in any bash and belong in awk. Where a scan cannot be moved out of the shell, bound the input instead — `guard_sql_destructive_word` skips tokens over 64 characters, which is free because its match is exact. `bats -f "does not hang"` pins it; a plain correctness test does not, because a statement whose verb comes first returns before it ever reaches the expensive token.
-  - `guards/<tool>.guard` is a **profile**: the verb vocabulary as data, plus `guard_resolve_target()` (and optionally `guard_classify_extra()` / `guard_reason()`) as code. Currently kubectl, helm, terraform+tofu, openstack, argocd, git, gh, glab, mysql, psql, and the wrappers ansible, helmfile, terragrunt, skaffold. Files prefixed `_` are shared helpers, not profiles — the dispatcher only globs `*.guard`.
-  - Three classification styles: `vocab` (fixed subcommand list, e.g. kubectl/terraform), `positional` (open-ended object-verb grammar, e.g. openstack/argocd/gh), and `sql` (mysql/psql — the verb is a SQL keyword that never appears in argv itself; `guard_classify_extra` is the whole classifier, not an override). Pick with `GUARD_STYLE`.
-  - The `sql` style has to find its payload before it can classify it, and there are five channels: an `-e`/`-c` value, a herestring, a heredoc body, a file (`-f` or `<`), and **standard input from a pipe**. The pipe is the one worth naming — `mysql db < migrate.sql` and `cat migrate.sql | mysql db` are the same operation, and `guard_segments` splits on `|`, so the relationship only survives in `$GUARD_RAW_CMD`. A producer whose text the guard can read (echo/printf/cat) is scanned like any other payload; an opaque one (mysqldump, gunzip, curl, a script) asks, because a restore is not a thing to discover afterwards.
-  - **Quotes are stripped only where they delimit a payload the guard extracted** — a flag value, a herestring — never blanket-fashion off a whole command line. Blanket stripping turns `-e "select … where state = 'delete'"` into a DELETE and prompts on a read. Conversely `guard_sql_unescape` collapses `\"` before extraction, or `ssh dbhost "mysql -e \"drop table t\""` matches nothing at all.
-  - `guard_reconstruct_segment` repairs a segment the blind segmenter cut mid-quote, and `guard_sql_invocation_text` bounds the repair back to that one invocation. Both halves are load-bearing and they fail differently: without the repair the mutation is missed, without the bound it is *found and attributed to the wrong segment*, so the prompt names the harmless host. Test both (`psql: a mutation in a later segment is attributed to that segment`).
-  - mysql/psql also override `GUARD_HELP_TOKENS`: the shared `guard_is_help` reads bare `-h` as `--help` by default, which is wrong for these two (`-h` is `--host`) and would otherwise pass a real mutation through silently. A profile whose short help flag isn't `-h` must override it.
-  - **Per-project allowlist** (`guard_allowed` in `guard-lib.sh`, `~/.claude/guard-allow.conf`). A rule is `<project dir> | <binary> | <target glob> | <action glob>`, e.g. `~/work/acme-api | mysql | host bench-db.internal* | *` — inside that checkout, SQL against the throwaway benchmark database runs unprompted while `prod-db.internal` still asks. The target is matched against the *resolved* target string, i.e. the exact text the prompt would have shown, so what gets allowed is what would have been read and approved anyway; target and action globs match case-insensitively (hostnames and SQL verbs both are, and `GUARD_ACTION` echoes back whatever case the command used). Checked centrally in `env-guard.sh` right before `guard_ask`, so it covers every profile and costs a file read only when a prompt was about to fire. The file lives in `$HOME`, is read as data (never sourced), and is ignored unless the user running the hook owns it: an allowlist a session could write into the repo it is working in would be self-approval with extra steps.
+```
+<project dir> | <binary> | <target glob> | <action glob>
+~/work/acme-api | mysql | host bench-db.internal* | *
+```
+
+Matched against the *resolved* target, i.e. the exact text the prompt would have
+shown, so what is allowed is what would have been read and approved anyway. The
+file must live in `$HOME` and be owned by the user running the hook: an allowlist
+a session could write into the repo it is working in would be self-approval with
+extra steps.
 
 #### Writing or tuning a guard
 
-Read this before adding a profile or widening what one lets through. Every rule
-below exists because breaking it produced a real bug in this repo.
+Every rule below exists because breaking it produced a real bug here.
 
 1. **Gate what cannot be walked back; let collaboration through.** The test is
-   reversibility, not visibility. Opening and commenting on PRs/MRs, reviewing,
-   editing a description, and ordinary pushes — including force-pushing your own
-   topic branch — must never prompt. `pr merge`, `repo delete`, `release create`,
-   `secret set`, `workflow run`, `api -X DELETE`, and force-push / branch-delete /
-   `--mirror` against a protected branch must. A guard that prompts on routine work
-   gets approved reflexively, which destroys its value for the cases that matter.
-2. **Encode the distinction as `group verb` pairs, not a blanket verb list.**
+   reversibility, not visibility. Opening/commenting on PRs, reviewing, editing a
+   description and ordinary pushes — including force-pushing your own topic
+   branch — must never prompt. `pr merge`, `repo delete`, `release create`,
+   `secret set`, `workflow run`, `api -X DELETE`, and force-push/branch-delete/
+   `--mirror` against a protected branch must. A guard that prompts on routine
+   work gets approved reflexively, which destroys its value where it matters.
+2. **Encode the distinction as `group verb` pairs, not a blanket verb list** —
    `create` means something very different on `pr` than on `repo`. See
    `GH_SAFE_PAIRS` / `GLAB_SAFE_PAIRS`.
 3. **Resolve the target from what the command itself names**, in preference to
-   ambient state (the cwd's git remote, the current kube context). A prompt that
-   names the *wrong* target is worse than no prompt — it is how the wrong
-   environment gets approved. This bug class appeared three separate times:
-   `gh repo delete acme/scratch` reporting the current checkout, `git push --mirror
-   backup` reporting origin, `git -C dir push` reading the `-C` value as the remote.
+   ambient state (the cwd's remote, the current kube context). A prompt naming
+   the *wrong* target is worse than no prompt — it is how the wrong environment
+   gets approved. This bug class has appeared four times.
 4. **Enumerate the exact values of a safety flag; never prefix-match.**
-   `--dry-run|--dry-run=.*` matched `--dry-run=false` and waved real helm and
-   argocd mutations straight through.
-5. **Guard only where the decision needs runtime state** (which kube context, which
-   TF workspace, which Argo CD server, which repo). For a purely syntactic rule a
-   `permissions.ask` entry in `settings.json` is cheaper than a hook. A wrapper is not automatically that case: `helmfile`,
-   `terragrunt`, `skaffold` and `ansible` all have a resolvable target (environment,
-   working dir, inventory, kube-context) and a real verb grammar, so they earn
+   `--dry-run|--dry-run=.*` matched `--dry-run=false` and waved real mutations
+   through.
+5. **Writing ≠ executing, and the consumer decides which it is.** Text that
+   names a command — a runbook, a commit message, a JSON blob, a `-e` SQL
+   string — must never prompt; the same text handed to something that runs it
+   must. A shell or `ssh` executes a heredoc body, an interpreter executes it as
+   opaque code, `cat`/`tee`/`git commit -F -` do not. Likewise quotes are
+   stripped only where they delimit a payload the guard extracted, never
+   blanket-fashion off a whole command line.
+6. **Guard only where the decision needs runtime state** (which kube context, TF
+   workspace, Argo CD server, repo). For a purely syntactic rule a
+   `permissions.ask` entry in `settings.json` is cheaper than a hook. A wrapper
+   is not automatically syntactic: `helmfile`, `terragrunt`, `skaffold`,
+   `ansible` all have a resolvable target and a real verb grammar, so they earn
    profiles and let their read-only halves through. `make` is the exception — a
-   target name says nothing about what it runs — so it stays a name-based
-   `permissions.ask` rule, backing up the recipe expansion in `guard_make_recipes`.
-6. **Add test cases in both directions** to `claude/tests/guards.bats` — the
-   read-only command that must pass *and* the mutation that must still ask — and
-   run `bats claude/tests/guards.bats`. Use fictional cluster/release/host names,
-   never real ones.
-   For a test that pins a *fix*, break the fix and watch the test fail before
-   trusting it. Two of these passed against reverted code here: one because the
-   `cp -i` alias silently blocked the revert (see `~/.claude/CLAUDE.md`), the
-   other because the test reproduced the symptom rather than the harm — a glued
-   segment is still caught by embedded-invocation detection, so the failure had
-   to be pinned on the *target resolution* picking the wrong context instead. A
-   green suite proves nothing about a bug it never actually reproduced.
-7. **Adding a tool is one new `.guard` file**, plus its filename in `bootstrap.sh`'s
-   `PROFILES` list. `bin/dotfiles` links `guards/` as a whole directory and the hook
-   is already registered, so nothing else changes.
-- `skills/`, `agents/`, `rules/`, and `refs/` → linked **per-entry** (not as whole directories), since `~/.claude/skills` and `~/.claude/rules` can already contain plugin-managed entries (e.g. context7) that must not be clobbered. `refs/` holds reference docs too long to inline into a skill or rule — they aren't auto-discovered by Claude Code, so a skill or rule must link to them explicitly by path (from a skill at `claude/skills/<name>/SKILL.md`, that's a `../../refs/<ref-name>.md` relative link). `agents/` holds subagent definitions (flat `.md` files, like `rules/`) that skills can dispatch to via the Agent tool for a second opinion or a parallel multi-perspective pass.
-- `settings.json` → **deep-merged** into `~/.claude/settings.json` via `jq` (`merge_json` in `bin/dotfiles`), not symlinked like everything else in this repo. Tracked keys win, but machine-local keys (e.g. `model`, `effortLevel`) already in the destination are preserved. It registers the env-guard hook, and its `permissions.ask` list covers `make`, the one wrapper with no verb grammar to classify. `ask` rules are evaluated independently of hooks and still prompt even when a hook returns `allow`, so the two layers compose rather than override each other. Rule syntax is `Bash(cmd *)` — the trailing space-star enforces a word boundary, so `Bash(ansible *)` matches `ansible` and `ansible -m ping` but not `ansible-lint`; `Bash(make deploy*)` without the space deliberately also matches `make deploy-prod`. Rules are matched against each subcommand of a compound command separately.
-- `statusline-command.sh` → symlinked to `~/.claude/statusline-command.sh`.
-
-`bin/claude-export-skills` is a separate utility (not run by `bin/dotfiles`) that zips up `~/.claude/skills/*` for uploading to claude.ai.
-
-### Package Definitions
-
-Homebrew formulae, casks, and npm packages are defined inline in `bin/dotfiles` (not a Brewfile). Edit that file to add/remove packages.
-
-### iTerm2
-
-`iterm2/` tracks the iTerm2 preferences plist and the OneDark color scheme. These are not auto-applied by `bin/dotfiles` — import them manually in iTerm2 preferences.
-
-### Git Identity
-
-`bin/dotfiles` reads `~/.gitauthor` (not tracked in this repo) for user name and email. This file is created interactively during first setup.
+   target name says nothing about what it runs — so it stays a name-based `ask`
+   rule backing up the recipe expansion in `guard_make_recipes`.
+7. **Add test cases in both directions** — the read-only command that must pass
+   *and* the mutation that must still ask. Fictional cluster/release/host names
+   only, never real ones. For a test pinning a *fix*, **break the fix and watch
+   the test fail** before trusting it: two tests here passed against reverted
+   code, one because the `cp -i` alias silently blocked the revert, the other
+   because it reproduced the symptom rather than the harm. A green suite proves
+   nothing about a bug it never actually reproduced.
+8. **Benchmark under `/bin/bash`, not the Homebrew bash on `$PATH`.** The hook
+   runs under its shebang, i.e. bash 3.2, where `${var//[chars]/}` is quadratic —
+   stripping `;(),` from a single 9 KB word takes **44 seconds** there against
+   31 ms under bash 5, and a `-e "delete … where id in (1,…,2000)"` is exactly
+   one such word. That is not a slow hook, it is a Bash call that never returns.
+   In anything running per segment or per token, avoid forks: no `printf | tr`,
+   and return values through a global rather than `$(…)`. Where a scan cannot
+   leave the shell, bound the input. `bats -f "does not hang"` pins this; a
+   correctness test does not, because a statement whose verb comes first returns
+   before reaching the expensive token.
+9. **Adding a tool is one new `.guard` file**, plus its filename in
+   `bootstrap.sh`'s `PROFILES` list. `bin/dotfiles` links `guards/` as a whole
+   directory and the hook is already registered.
