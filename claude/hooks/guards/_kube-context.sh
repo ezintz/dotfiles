@@ -39,4 +39,6 @@ guard_reason() {
 
 # Clusters that only ever exist on this laptop. Everything else — including
 # unknown contexts and custom kubeconfigs — has to be confirmed.
-GUARD_KUBE_LOCAL_CONTEXTS='^(orbstack|docker-desktop|docker-for-desktop|minikube|kind(-[A-Za-z0-9_.-]+)?|k3d-[A-Za-z0-9_.-]+|rancher-desktop|colima)$'
+# colima names its kube context after the profile (`colima` for the default one,
+# `colima-<profile>` otherwise), the same shape as kind and k3d.
+GUARD_KUBE_LOCAL_CONTEXTS='^(orbstack|docker-desktop|docker-for-desktop|minikube|kind(-[A-Za-z0-9_.-]+)?|k3d-[A-Za-z0-9_.-]+|rancher-desktop|colima(-[A-Za-z0-9_.-]+)?)$'

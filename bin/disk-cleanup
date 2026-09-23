@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+# Reclaim disk space from regenerable caches and orphaned application data.
+#
+# DRY RUN BY DEFAULT — nothing is deleted unless --apply is passed.
+#
+# Usage:
+#   disk-cleanup                      # show what would go, delete nothing
+#   disk-cleanup jetbrains            # dry-run a single section
+#   disk-cleanup --apply              # delete everything listed
+#   disk-cleanup --apply devcaches    # delete a single section
+#
+# Sections:
+#   jetbrains   stale IDE caches/profiles, keeping those in KEEP_IDE below
+#   devcaches   package-manager, browser-binary and scanner-DB caches
+#   claude      Claude Code transcripts/scratchpads older than STALE_DAYS
+#
+# Scope: recurring, regenerable caches only. One-off removals of uninstalled
+# applications do not belong here — do those by hand.
+#
+# Never touched: ~/.claude/projects/*/memory, plugins, skills, security,
+# settings.json, and any session scratchpad still being written to.
+#
+# Deliberately NOT `set -e`: absent paths and false `[[ -e ]]` tests are the
+# normal case here and must not abort the run.
+set -uo pipefail
+
+APPLY=0
+[[ "${1:-}" == "--apply" ]] && { APPLY=1; shift; }
+ONLY="${1:-all}"
+
+SECTIONS=(jetbrains devcaches claude)
+if [[ "$ONLY" != "all" ]]; then
+  ok=0
+  for s in "${SECTIONS[@]}"; do [[ "$ONLY" == "$s" ]] && ok=1; done
+  if (( ! ok )); then
+    printf 'disk-cleanup: unknown section %s\n' "'$ONLY'" >&2
+    printf 'valid sections: %s (or omit for all)\n' "${SECTIONS[*]}" >&2
+    exit 2
+  fi
+fi
+
+STALE_DAYS=30                 # age cutoff for Claude transcripts/scratchpads
+KEEP_IDE=("PhpStorm2026.2" "PhpStorm2026.1")   # IDE profiles to preserve
+
+freed=0
+if [[ -t 1 ]]; then
+  c_hdr=$'\033[1;36m'; c_del=$'\033[0;33m'; c_ok=$'\033[0;32m'; c_warn=$'\033[1;31m'; c_off=$'\033[0m'
+else
+  c_hdr= c_del= c_ok= c_warn= c_off=
+fi
+
+section() { [[ "$ONLY" == "all" || "$ONLY" == "$1" ]]; }
+hdr()     { printf '\n%s== %s ==%s\n' "$c_hdr" "$1" "$c_off"; }
+
+# kb <path> -> size in KB (0 if missing)
+kb() { [[ -e "$1" ]] && du -sk "$1" 2>/dev/null | cut -f1 || echo 0; }
+
+# drop <path> [label]
+drop() {
+  local p="$1" label="${2:-}" sz
+  [[ -e "$p" ]] || return 0
+  sz=$(kb "$p"); freed=$((freed + sz))
+  printf '  %s%-9s%s %s %s\n' "$c_del" "$(du -sh "$p" 2>/dev/null | cut -f1)" "$c_off" "$p" "$label"
+  (( APPLY )) && rm -rf -- "$p"
+  return 0
+}
+
+# ---------------------------------------------------------------- 6 JetBrains
+if section jetbrains; then
+  hdr "6. JetBrains — keeping ${KEEP_IDE[*]}"
+  for base in "$HOME/Library/Caches/JetBrains" "$HOME/Library/Application Support/JetBrains"; do
+    [[ -d "$base" ]] || continue
+    for d in "$base"/*/; do
+      name=$(basename "$d")
+      # only ever touch versioned IDE profiles; never shared dirs
+      [[ "$name" =~ ^(PhpStorm|Aqua|GoLand|IntelliJIdea|Fleet|FleetBackend)[0-9]{4}\.[0-9]+$ ]] || continue
+      keep=0
+      for k in "${KEEP_IDE[@]}"; do [[ "$name" == "$k" ]] && keep=1; done
+      (( keep )) && continue
+      drop "${d%/}"
+    done
+  done
+  # stale non-versioned leftovers from uninstalled products
+  drop "$HOME/Library/Application Support/JetBrains/Fleet"
+  drop "$HOME/Library/Application Support/JetBrains/IntelliJ"
+fi
+
+# ------------------------------------------------------------- 8 Dev caches
+if section devcaches; then
+  hdr "8. Dev caches — all re-downloadable / regenerated on next build"
+
+  # Prefer each tool's own cache command; it keeps internal metadata consistent.
+  if (( APPLY )); then
+    command -v bun      >/dev/null && bun pm cache rm            >/dev/null 2>&1
+    command -v npm      >/dev/null && npm cache clean --force    >/dev/null 2>&1
+    command -v go       >/dev/null && go clean -modcache         >/dev/null 2>&1
+    command -v composer >/dev/null && composer clear-cache       >/dev/null 2>&1
+  else
+    printf '  %s(would run: bun pm cache rm / npm cache clean / go clean -modcache / composer clear-cache)%s\n' "$c_ok" "$c_off"
+  fi
+
+  drop "$HOME/.bun/install/cache"                   "# bun package cache"
+  drop "$HOME/Library/Caches/grype"                 "# CVE DB, re-syncs"
+  drop "$HOME/Library/Caches/trivy"                 "# CVE DB, re-syncs"
+  drop "$HOME/.cache/codex-runtimes"                "# re-downloads on next use"
+  drop "$HOME/.cache/puppeteer"                     "# re-downloads Chromium"
+  drop "$HOME/.cache/github-copilot"                "# regenerates"
+  drop "$HOME/.cache/uv"
+  drop "$HOME/Library/Caches/ms-playwright"         "# needs: npx playwright install"
+  drop "$HOME/Library/Caches/ms-playwright-go"
+  drop "$HOME/Library/Caches/typescript"
+  drop "$HOME/Library/Caches/pypoetry"
+  drop "$HOME/Library/Caches/composer"
+  drop "$HOME/.npm/_cacache"
+  drop "$HOME/.gradle/caches"                       "# keeps wrapper dists"
+
+  # stale app self-updater downloads
+  for u in bitwarden-updater podman-desktop-updater "@granolaelectron-updater" \
+           com.tinyspeck.slackmacgap.ShipIt; do
+    drop "$HOME/Library/Caches/$u"                  "# stale installer"
+  done
+fi
+
+# --------------------------------------------- 9 Claude stale data (KEEP memory)
+if section claude; then
+  hdr "9. Claude — stale >${STALE_DAYS}d; memory/, plugins/, skills/ PRESERVED"
+
+  # Guard: never touch a live session's scratchpad. Three independent checks,
+  # because CLAUDE_SESSION_ID is not reliably exported into the shell.
+  #   1. the env var, when present
+  #   2. this script's own location (it lives inside a session scratchpad)
+  #   3. a recency floor — an active session is being written to right now
+  CUR_SESSION="${CLAUDE_SESSION_ID:-}"
+  SELF_SESSION=$(
+    d=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+    while [[ "$d" != "/" ]]; do
+      b=$(basename "$d")
+      if [[ "$b" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+        echo "$b"; break
+      fi
+      d=$(dirname "$d")
+    done
+  )
+  LIVE_MINS=1440   # skip any session dir touched in the last 24h
+
+  # --- 9a. transcripts + per-session dirs older than STALE_DAYS -------------
+  # -prune on */memory ensures memory files are never even considered.
+  while IFS= read -r f; do drop "$f"; done < <(
+    find "$HOME/.claude/projects" -path '*/memory' -prune -o \
+         -type f -name '*.jsonl' -mtime "+$STALE_DAYS" -print 2>/dev/null
+  )
+  while IFS= read -r d; do drop "$d"; done < <(
+    find "$HOME/.claude/projects" -path '*/memory' -prune -o \
+         -mindepth 2 -maxdepth 2 -type d -mtime "+$STALE_DAYS" -print 2>/dev/null
+  )
+
+  # --- 9b. small stale bookkeeping ----------------------------------------
+  while IFS= read -r f; do drop "$f"; done < <(
+    find "$HOME/.claude" -maxdepth 1 -name 'session-cost-*' -mtime "+$STALE_DAYS" 2>/dev/null
+  )
+  for sub in file-history paste-cache shell-snapshots; do
+    while IFS= read -r f; do drop "$f"; done < <(
+      find "$HOME/.claude/$sub" -type f -mtime "+$STALE_DAYS" 2>/dev/null
+    )
+  done
+
+  # --- 9c. regenerable build caches in scratchpad (age-agnostic) -----------
+  # These are compiler/nx caches, not transcripts — safe at any age.
+  for p in /private/tmp/claude-*/nx-native-file-cache-* \
+           /private/tmp/claude-*/node-compile-cache \
+           /private/tmp/claude-*/v8-compile-cache-* \
+           /private/tmp/claude-*/node-jiti /private/tmp/claude-*/jiti \
+           /private/tmp/claude-*/bunx-*; do
+    [[ -e "$p" ]] && drop "$p" "# regenerable"
+  done
+
+  # --- 9d. finished session scratchpads, excluding the live one ------------
+  for d in /private/tmp/claude-*/*/*/; do
+    [[ -d "$d" ]] || continue
+    sid=$(basename "${d%/}")
+    # only UUID-shaped session dirs
+    [[ "$sid" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || continue
+    [[ -n "$CUR_SESSION"  && "$sid" == "$CUR_SESSION"  ]] && continue
+    [[ -n "$SELF_SESSION" && "$sid" == "$SELF_SESSION" ]] && continue
+    # recency floor: still being written => still live
+    [[ -n "$(find "$d" -maxdepth 0 -mmin "-$LIVE_MINS" 2>/dev/null)" ]] && continue
+    drop "${d%/}" "# finished session"
+  done
+
+  printf '  %skeeping: */memory, ~/.claude/plugins, skills, security, settings%s\n' "$c_ok" "$c_off"
+fi
+
+# ---------------------------------------------------------------- summary
+printf '\n%s──────────────────────────────%s\n' "$c_hdr" "$c_off"
+printf 'Reclaimable: %s%.1f GB%s\n' "$c_ok" "$(echo "$freed" | awk '{print $1/1048576}')" "$c_off"
+if (( APPLY )); then
+  printf 'Status: %sDELETED%s\n' "$c_warn" "$c_off"
+  df -h /System/Volumes/Data | tail -1
+else
+  printf 'Status: %sdry run — nothing deleted.%s Re-run with --apply\n' "$c_ok" "$c_off"
+fi

@@ -193,14 +193,201 @@ $1
 EOF
 }
 
+# Interpreter APIs that hand a string to a shell or exec a program. Deliberately
+# NOT including backticks or $( ) — those are handled precisely by
+# guard_heredoc_expansions, and inside a *quoted* heredoc the shell never
+# evaluates them anyway.
+GUARD_EXEC_HINTS='os\.system|os\.popen|os\.exec|os\.spawn|subprocess|pty\.spawn|commands\.getoutput|shell_exec|proc_open|passthru|popen\(|system\(|exec\(|qx[({/|]|%x[({]|Open3|IO\.popen|Kernel#?\.?(system|spawn)|child_process|execSync|spawnSync|execFileSync|(sh|bash|zsh|ash|dash)[[:space:]]+-c'
+
+# Who consumes a heredoc decides what the body *is*.
+#
+# A shell (or ssh, which is a shell on another machine) executes every line of
+# it: the body is a script, and is classified as one. A non-shell interpreter
+# executes it as code in another language, where the only thing we can spot is
+# a call into an exec API. Everything else — `git commit -F -`, `cat > file`,
+# `tee`, `jq`, `kubectl apply -f -` — is being handed data, and data that
+# happens to contain the word `kubectl` is not an invocation.
+GUARD_HEREDOC_SHELL_HEADS='sh|bash|zsh|ksh|dash|ash|ssh'
+GUARD_HEREDOC_INTERP_HEADS='python|python2|python3|ruby|perl|node|php|lua|deno|bun|Rscript|osascript'
+# Container runtimes are transport, not the consumer: `docker exec -i box bash
+# <<EOF` runs the body in a shell. The shell word appears later on the line.
+GUARD_HEREDOC_TRANSPORTS='docker|podman|nerdctl|lima|colima|kubectl'
+# Every word that could make a heredoc body executable, as one word-bounded
+# regex. A consumer that never appears anywhere in the command cannot appear on
+# a heredoc's opening line either, so this is a sound necessary condition — and
+# it is what keeps `cat > notes.md <<'EOF' … EOF`, far and away the most common
+# heredoc there is, from walking its own body twice to learn that `cat` runs
+# nothing. Word boundaries matter: a plain `*sh*` glob matches "should".
+GUARD_HEREDOC_EXEC_RE='(^|[^A-Za-z0-9_./-])(sh|bash|zsh|ksh|dash|ash|ssh|python|python2|python3|ruby|perl|node|php|lua|deno|bun|Rscript|osascript|docker|podman|nerdctl|lima|colima|kubectl)([^A-Za-z0-9_-]|$)'
+
+# guard_head_word <segment> — basename of the segment's command word, after env
+# assignments and transparent wrappers, into $GUARD_HEAD_WORD. Non-zero when the
+# segment has none.
+#
+# Sets a global rather than printing: every caller runs it per segment or per
+# pipe stage, and `x=$(guard_head_word …)` is a fork each time — worth ~9ms on a
+# command with a few segments, which is most of them.
+GUARD_HEAD_WORD=''
+guard_head_word() {
+  local i=0 n
+  GUARD_HEAD_WORD=''
+  guard_tokenize "$1"
+  n=${#GUARD_TOKENS[@]}
+  while [ $i -lt $n ]; do
+    case "${GUARD_TOKENS[$i]}" in
+      [A-Za-z_]*=*)                        i=$((i + 1)); continue ;;
+      sudo|env|nohup|time|exec|stdbuf|doas) i=$((i + 1)); continue ;;
+    esac
+    break
+  done
+  [ $i -lt $n ] || return 1
+  GUARD_HEAD_WORD="${GUARD_TOKENS[$i]##*/}"
+  return 0
+}
+
+# guard_heredoc_is_shell <consumer> <opening-line> — 0 when the body will be
+# executed line by line as a shell script.
+guard_heredoc_is_shell() {
+  local consumer="$1" line="$2" t
+  [[ "$consumer" =~ ^($GUARD_HEREDOC_SHELL_HEADS)$ ]] && return 0
+  [[ "$consumer" =~ ^($GUARD_HEREDOC_TRANSPORTS)$ ]] || return 1
+  guard_tokenize "$line"
+  for t in ${GUARD_TOKENS[@]+"${GUARD_TOKENS[@]}"}; do
+    case "${t##*/}" in
+      sh|bash|zsh|ksh|dash|ash) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# guard_heredoc_bodies <command> [all|unquoted|shell|interp]
+# Prints heredoc bodies, one line each:
+#
+#   all       every body (what a caller wanting raw text asks for)
+#   unquoted  only bodies whose delimiter was unquoted (`<<EOF`, not `<<'EOF'`),
+#             i.e. the ones the shell still expands
+#   shell     only bodies a shell or ssh executes
+#   interp    only bodies another language's interpreter executes
+#
+# The two execution modes prefix each body with a `#guard-src:` provenance
+# marker naming the consumer, so a prompt can say where the command came from.
+# Markers are inert: guard_embedded_invocation already skips a `#`-headed
+# segment and guard_invocation cannot match one.
+#
+# The walk mirrors guard_strip_heredocs; it runs only under the same `<<` glob,
+# so the common command pays nothing for it.
+guard_heredoc_bodies() {
+  local want="${2:-all}"
+  local line delim='' dashed=0 quoted=0 trimmed spec body emit=0 consumer=''
+  while IFS= read -r line; do
+    if [ -n "$delim" ]; then
+      trimmed="$line"
+      if [ "$dashed" = 1 ]; then
+        while [ "${trimmed#	}" != "$trimmed" ]; do trimmed="${trimmed#	}"; done
+      fi
+      [ "$trimmed" = "$delim" ] && { delim=''; continue; }
+      [ "$emit" = 1 ] && printf '%s\n' "$line"
+      continue
+    fi
+    case "$line" in
+      *'<<'*)
+        spec=$(printf '%s' "$line" | sed -nE 's/.*<<(-?)[[:space:]]*("[^"]+"|'"'"'[^'"'"']+'"'"'|\\[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*).*/\1 \2/p')
+        [ -n "$spec" ] || continue
+        case "$spec" in
+          -*) dashed=1 ;;
+          *)  dashed=0 ;;
+        esac
+        body="${spec#* }"
+        case "$body" in
+          \"*|\'*|\\*) quoted=1 ;;
+          *)           quoted=0 ;;
+        esac
+        # Strip whichever wrapper marked it quoted.
+        body="${body#[\"\'\\]}"; body="${body%[\"\']}"
+        delim="$body"
+        emit=0
+        case "$want" in
+          all)      emit=1 ;;
+          unquoted) [ "$quoted" = 0 ] && emit=1 ;;
+          shell|interp)
+            guard_head_word "$line" || GUARD_HEAD_WORD=''
+            consumer="$GUARD_HEAD_WORD"
+            if [ -n "$consumer" ]; then
+              if [ "$want" = shell ]; then
+                guard_heredoc_is_shell "$consumer" "$line" && emit=1
+              elif [[ "$consumer" =~ ^($GUARD_HEREDOC_INTERP_HEADS)$ ]]; then
+                emit=1
+              fi
+            fi
+            [ "$emit" = 1 ] && printf '#guard-src:heredoc into %s\n' "$consumer" ;;
+        esac ;;
+    esac
+  done <<EOF
+$1
+EOF
+  return 0
+}
+
+# guard_heredoc_script_bodies <command> — the segments of every heredoc body a
+# shell or ssh executes.
+#
+# `bash <<'EOF' … kubectl --context production delete pod api … EOF` is not a
+# document, it is a script arriving on stdin, and stripping the body as data
+# made it — and the `ssh host <<'EOF'` form, which runs on another machine
+# entirely — completely silent. Classified like a script file, so the prompt
+# names the real target rather than throwing up its hands at an opaque body.
+guard_heredoc_script_bodies() {
+  guard_segments "$(guard_strip_heredocs "$(guard_heredoc_bodies "$1" shell)")"
+}
+
+# guard_heredoc_expansions <command> — the command substitutions the shell would
+# actually run while writing an unquoted heredoc, one per line.
+#
+# `cat > runbook.md <<EOF … kubectl delete … EOF` is documentation and must stay
+# silent (guard_strip_heredocs drops the whole body for exactly that reason).
+# But an *unquoted* delimiter still expands, so
+#   python3 - <<EOF
+#   x = "$(kubectl --context production delete pod api)"
+#   EOF
+# runs the delete before python3 ever sees a byte. Pulling just the substitution
+# out gives the classifier a real invocation with a resolvable target, instead of
+# either missing it or prompting on prose.
+guard_heredoc_expansions() {
+  guard_heredoc_bodies "$1" unquoted \
+    | grep -oE '\$\([^()]*\)|`[^`]*`' 2>/dev/null \
+    | sed -e 's/^\$(//' -e 's/^`//' -e 's/)$//' -e 's/`$//'
+}
+
+# guard_heredoc_shells_out <binary>
+# 0 when a heredoc body both mentions <binary> and calls an interpreter API that
+# can run it — `python3 - <<'PY' … subprocess.run(['kubectl','delete',…]) … PY`.
+# The body is opaque: we cannot tell which target it would hit, or whether the
+# mention is even the one executed, so the caller asks rather than guessing.
+# Writing chart YAML or a pipeline file trips neither half and stays silent.
+guard_heredoc_shells_out() {
+  local bin="$1"
+  [ -n "${GUARD_HEREDOC_BODY:-}" ] || return 1
+  printf '%s' "$GUARD_HEREDOC_BODY" | grep -qE "$GUARD_EXEC_HINTS" || return 1
+  printf '%s' "$GUARD_HEREDOC_BODY" \
+    | grep -qE "(^|[^A-Za-z0-9_./-])$bin([^A-Za-z0-9_-]|\$)" || return 1
+  return 0
+}
+
 # --- executed scripts -------------------------------------------------------
 
-# guard_script_path <segment> — the script file this segment executes, if any.
-# Covers `bash deploy.sh`, `sh -e deploy.sh`, `source ./env.sh` and `./deploy.sh`.
-# `bash -c "…"` is not a file and simply fails the existence test below; that
-# form is already covered by guard_embedded_invocation.
+# guard_script_path <segment> [nofs] — the script file this segment executes,
+# into $GUARD_SCRIPT_PATH. Covers `bash deploy.sh`, `sh -e deploy.sh`,
+# `source ./env.sh` and `./deploy.sh`. `bash -c "…"` is not a file and simply
+# fails the existence test in the caller; that form is already covered by
+# guard_embedded_invocation.
+#
+# Sets a global rather than printing, for the same reason guard_head_word does:
+# both callers run it once per segment, and a command substitution there is a
+# fork per segment of every command.
+GUARD_SCRIPT_PATH=''
 guard_script_path() {
-  local n i=0 t
+  local n i=0 t nofs="${2:-}"
+  GUARD_SCRIPT_PATH=''
   guard_tokenize "$1"
   n=${#GUARD_TOKENS[@]}
   [ $n -gt 0 ] || return 1
@@ -219,15 +406,84 @@ guard_script_path() {
       while [ $i -lt $n ]; do
         case "${GUARD_TOKENS[$i]}" in
           -*) i=$((i + 1)); continue ;;
-          *)  printf '%s' "${GUARD_TOKENS[$i]}"; return 0 ;;
+          *)  GUARD_SCRIPT_PATH="${GUARD_TOKENS[$i]}"; return 0 ;;
         esac
       done
       return 1 ;;
     *)
       # A path, not a PATH lookup — `./deploy.sh`, `/tmp/deploy.sh`.
-      case "$t" in ./*|../*|/*) printf '%s' "$t"; return 0 ;; esac
+      #
+      # The executable bit is required here and not for the interpreter form
+      # above, where the head word already said "run this". guard_segments
+      # splits on `(`, `)` and `|`, so a *data* path lands in head position all
+      # the time — `json.load(open('/tmp/data.json'))` and `>| /tmp/out.json`
+      # both produce a segment that is nothing but the path. Reading those and
+      # classifying their contents prompted on text inside a JSON file.
+      #
+      # With "nofs" the bit is not consulted, for the one caller that must not:
+      # guard_inline_scripts matches against a file this command is about to
+      # *create*, which by definition is neither present nor executable yet.
+      case "$t" in
+        ./*|../*|/*)
+          [ "$nofs" = nofs ] || [ -x "$t" ] || return 1
+          GUARD_SCRIPT_PATH="$t"; return 0 ;;
+      esac
       return 1 ;;
   esac
+}
+
+# guard_redirect_target <segment> — the file the segment redirects stdout into
+# (`> f`, `>> f`, `>| f`, `1> f`, and the unspaced forms), or nothing.
+guard_redirect_target() {
+  local i=0 n t
+  guard_tokenize "$1"
+  n=${#GUARD_TOKENS[@]}
+  while [ $i -lt $n ]; do
+    t="${GUARD_TOKENS[$i]}"
+    case "$t" in
+      '>'|'>>'|'>|'|'1>'|'1>>'|'1>|')
+        i=$((i + 1))
+        [ $i -lt $n ] || return 1
+        printf '%s' "${GUARD_TOKENS[$i]}"; return 0 ;;
+      '>'*|'1>'*)
+        t="${t#1}"; t="${t#>}"; t="${t#>}"; t="${t#|}"
+        [ -n "$t" ] && { printf '%s' "$t"; return 0; } ;;
+    esac
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# guard_tee_target <segment> — tee's first file operand (`tee deploy.sh`).
+guard_tee_target() {
+  local i=0 n t
+  guard_tokenize "$1"
+  n=${#GUARD_TOKENS[@]}
+  while [ $i -lt $n ]; do
+    [ "${GUARD_TOKENS[$i]##*/}" = tee ] && { i=$((i + 1)); break; }
+    i=$((i + 1))
+  done
+  while [ $i -lt $n ]; do
+    t="${GUARD_TOKENS[$i]}"
+    i=$((i + 1))
+    case "$t" in -*|'<<'*) continue ;; esac
+    printf '%s' "$t"; return 0
+  done
+  return 1
+}
+
+# guard_is_text <file> — 0 when the first 1 KiB is printable text.
+#
+# `/usr/bin/python3 - <<'PY'` puts an executable *binary* in head position, and
+# `head -c 65536` on a Mach-O image yields garbage segments plus `tr: Illegal
+# byte sequence` on stderr. LC_ALL=C is what makes tr byte-oriented rather than
+# choking on invalid UTF-8; `wc -c` rather than testing `$(…)` for emptiness
+# because command substitution silently drops NUL bytes, which is most of what
+# distinguishes a binary in the first place.
+guard_is_text() {
+  local n
+  n=$(LC_ALL=C head -c 1024 "$1" 2>/dev/null | LC_ALL=C tr -d '[:print:][:space:]' | wc -c)
+  [ "${n:-1}" -eq 0 ]
 }
 
 # guard_script_bodies <segments> — the segments of every script the command
@@ -242,16 +498,253 @@ guard_script_bodies() {
   local seg file n=0
   while IFS= read -r seg; do
     [ -n "$seg" ] || continue
-    file=$(guard_script_path "$seg") || continue
+    guard_script_path "$seg" || continue
+    file="$GUARD_SCRIPT_PATH"
     [ -n "$file" ] || continue
     case "$file" in "~/"*) file="$HOME/${file#\~/}" ;; esac
     [ -f "$file" ] && [ -r "$file" ] || continue
+    guard_is_text "$file" || continue
     n=$((n + 1))
     [ $n -gt 4 ] && break
+    printf '#guard-src:script %s\n' "${file##*/}"
     guard_segments "$(guard_strip_heredocs "$(head -c 65536 "$file" 2>/dev/null)")"
   done <<EOF
 $1
 EOF
+}
+
+# --- a script written and run in the same command ----------------------------
+
+# guard_inline_scripts <raw-command> <segments> — the segments of a script this
+# very command writes and then executes.
+#
+# guard_script_bodies reads from disk, which is right for a script that already
+# exists and useless for `cat > deploy.sh <<'EOF' … EOF && bash deploy.sh`: the
+# hook runs *before* the command, so at classification time the file is absent
+# or still holds its old contents. That made write-then-run in a single Bash
+# call the one shape that could route around every guard. The body is in the
+# command line, though, so it is matched to the execution by path instead of by
+# reading the file.
+#
+# Narrow on purpose, because the ways to get this wrong are the ones that have
+# already cost us. The body only *is* the file when a pass-through consumer
+# writes it — `cat >`, `tee`, `echo >`, `printf >`. `python3 - <<'PY' >| out.json`
+# also pairs a heredoc with a redirect, but there the body is python source and
+# out.json is python's *output*; treating one as the other is exactly how a JSON
+# blob came to be read as a shell script. And nothing is emitted unless the
+# command also executes that path: writing a runbook stays free.
+guard_inline_scripts() {
+  local raw="$1" segs="$2"
+  local seg path targets='|' found=0 n=0
+  local line delim='' dashed=0 trimmed spec dl body='' consumer wrote='' emit=0
+
+  # Cheap pre-filter: a command that writes no file cannot write a script.
+  # `tee` earns its own arm because it takes the file as an operand — there is
+  # no `>` anywhere in `tee deploy.sh <<'EOF'`.
+  case "$raw" in *'>'*|*tee*) ;; *) return 0 ;; esac
+
+  # What this command executes. The filesystem is deliberately not consulted —
+  # the whole point is that the file is not there yet.
+  while IFS= read -r seg; do
+    [ -n "$seg" ] || continue
+    guard_script_path "$seg" nofs || continue
+    path="$GUARD_SCRIPT_PATH"
+    [ -n "$path" ] || continue
+    targets="$targets${path#./}|"
+    found=1
+  done <<EOF
+$segs
+EOF
+  [ $found -eq 1 ] || return 0
+
+  # `echo "kubectl … delete …" > deploy.sh`, `printf … > deploy.sh`
+  while IFS= read -r seg; do
+    [ -n "$seg" ] || continue
+    case "$seg" in *'>'*) ;; *) continue ;; esac
+    guard_head_word "$seg" || continue
+    consumer="$GUARD_HEAD_WORD"
+    case "$consumer" in echo|printf) ;; *) continue ;; esac
+    wrote=$(guard_redirect_target "$seg") || continue
+    wrote="${wrote#./}"
+    case "$targets" in *"|$wrote|"*) ;; *) continue ;; esac
+    n=$((n + 1))
+    [ $n -gt 4 ] && break
+    printf '#guard-src:script %s written in this command\n' "${wrote##*/}"
+    guard_segments "$(guard_pipe_text "$seg" "$consumer")"
+  done <<EOF
+$segs
+EOF
+
+  # `cat > deploy.sh <<'EOF' … EOF`, `tee deploy.sh <<'EOF' … EOF`
+  while IFS= read -r line; do
+    if [ -n "$delim" ]; then
+      trimmed="$line"
+      if [ "$dashed" = 1 ]; then
+        while [ "${trimmed#	}" != "$trimmed" ]; do trimmed="${trimmed#	}"; done
+      fi
+      if [ "$trimmed" = "$delim" ]; then
+        delim=''
+        if [ "$emit" = 1 ]; then
+          printf '#guard-src:script %s written in this command\n' "${wrote##*/}"
+          guard_segments "$body"
+        fi
+        emit=0; body=''
+        continue
+      fi
+      [ "$emit" = 1 ] && body="$body$line
+"
+      continue
+    fi
+    case "$line" in
+      *'<<'*)
+        spec=$(printf '%s' "$line" | sed -nE 's/.*<<(-?)[[:space:]]*("[^"]+"|'"'"'[^'"'"']+'"'"'|\\[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*).*/\1 \2/p')
+        [ -n "$spec" ] || continue
+        case "$spec" in -*) dashed=1 ;; *) dashed=0 ;; esac
+        dl="${spec#* }"
+        dl="${dl#[\"\'\\]}"; dl="${dl%[\"\']}"
+        delim="$dl"
+        body=''; emit=0; wrote=''
+        guard_head_word "$line" || GUARD_HEAD_WORD=''
+        consumer="$GUARD_HEAD_WORD"
+        case "$consumer" in
+          cat) wrote=$(guard_redirect_target "$line") || wrote='' ;;
+          tee) wrote=$(guard_tee_target "$line")      || wrote='' ;;
+        esac
+        if [ -n "$wrote" ]; then
+          wrote="${wrote#./}"
+          case "$targets" in
+            *"|$wrote|"*)
+              n=$((n + 1))
+              [ $n -le 4 ] && emit=1 ;;
+          esac
+        fi ;;
+    esac
+  done <<EOF
+$raw
+EOF
+  return 0
+}
+
+# --- a pipeline whose sink is a shell ----------------------------------------
+
+# guard_shell_pipes <raw-command> — the segments of whatever a pipeline feeds
+# into a shell, plus a `#guard-src:` marker naming where it came from.
+#
+# `cat deploy.sh | bash` is `bash deploy.sh` and `echo "kubectl … delete …" |
+# sh` is that delete, but guard_segments splits on `|`, so by the time a profile
+# sees them the producer and the shell are unrelated fragments and neither is an
+# invocation of anything. The relationship survives only in $GUARD_RAW_CMD —
+# the same problem _sql.sh already solves for `cat migrate.sql | mysql`.
+#
+# A producer whose text we can read is read. An opaque one (`curl … | bash`)
+# gets a `#guard-opaque-pipe` line so the caller can ask: a script nobody has
+# read is not a thing to discover afterwards. It is a marker rather than a
+# variable because this runs in a command substitution, where an assignment
+# would never reach the caller.
+guard_shell_pipes() {
+  local raw="$1" prod sink shead phead
+  # Both conditions are necessary and cost nothing: no pipe, no pipeline, and
+  # every shell this cares about — sh, bash, zsh, ksh, dash, ash — contains the
+  # substring "sh", so a command without one has no shell sink. Worth the two
+  # globs: `cat a.txt | sort | uniq -c` would otherwise fork awk and tokenize
+  # every stage to discover there is nothing here.
+  case "$raw" in *'|'*) ;; *) return 0 ;; esac
+  case "$raw" in *sh*)  ;; *) return 0 ;; esac
+  while IFS='	' read -r prod sink; do
+    [ -n "$prod" ] && [ -n "$sink" ] || continue
+    guard_head_word "$sink" || continue
+    shead="$GUARD_HEAD_WORD"
+    case "$shead" in sh|bash|zsh|ksh|dash|ash) ;; *) continue ;; esac
+    # A shell given a script operand (or -c) is not reading stdin, and both of
+    # those forms are already classified elsewhere.
+    guard_sink_reads_stdin "$sink" || continue
+    guard_head_word "$prod" || continue
+    phead="$GUARD_HEAD_WORD"
+    case "$phead" in
+      cat|echo|printf)
+        printf '#guard-src:pipe into %s\n' "$shead"
+        guard_segments "$(guard_strip_heredocs "$(guard_pipe_text "$prod" "$phead")")" ;;
+      *) printf '#guard-opaque-pipe %s %s\n' "$phead" "$shead" ;;
+    esac
+  done <<EOF
+$(printf '%s\n' "$raw" | awk -F'|' '{
+    prev = ""
+    for (i = 1; i <= NF; i++) {
+      # An empty field is the gap inside `||`, which is a conditional, not a
+      # pipe — reset so `cat f.sh || bash` is not read as `cat f.sh | bash`.
+      if ($i == "") { prev = ""; continue }
+      if (prev != "") print prev "\t" $i
+      prev = $i
+    }
+  }')
+EOF
+  return 0
+}
+
+# guard_sink_reads_stdin <segment> — 0 when this shell invocation takes its
+# script from stdin rather than from a file operand or -c.
+guard_sink_reads_stdin() {
+  local i n t
+  guard_tokenize "$1"
+  n=${#GUARD_TOKENS[@]}
+  i=0
+  while [ $i -lt $n ]; do
+    case "${GUARD_TOKENS[$i]}" in
+      [A-Za-z_]*=*)                        i=$((i + 1)); continue ;;
+      sudo|env|nohup|time|exec|stdbuf|doas) i=$((i + 1)); continue ;;
+    esac
+    break
+  done
+  i=$((i + 1))
+  while [ $i -lt $n ]; do
+    t="${GUARD_TOKENS[$i]}"
+    case "$t" in
+      -c) return 1 ;;
+      -*) i=$((i + 1)); continue ;;
+      *)  return 1 ;;
+    esac
+  done
+  return 0
+}
+
+# guard_pipe_text <producer-segment> <producer-head> — the text the producer
+# writes to the pipe: the contents of the files `cat` names, or the words
+# `echo`/`printf` were given.
+guard_pipe_text() {
+  local prod="$1" phead="$2" i=0 n t out=''
+  guard_tokenize "$prod"
+  n=${#GUARD_TOKENS[@]}
+  while [ $i -lt $n ]; do
+    [ "${GUARD_TOKENS[$i]##*/}" = "$phead" ] && { i=$((i + 1)); break; }
+    i=$((i + 1))
+  done
+  if [ "$phead" = cat ]; then
+    while [ $i -lt $n ]; do
+      t="${GUARD_TOKENS[$i]}"
+      i=$((i + 1))
+      case "$t" in -*) continue ;; esac                    # cat -n, cat -v
+      case "$t" in "~/"*) t="$HOME/${t#\~/}" ;; esac
+      [ -f "$t" ] && [ -r "$t" ] || continue
+      guard_is_text "$t" || continue
+      head -c 65536 "$t" 2>/dev/null
+    done
+    return 0
+  fi
+  # echo/printf: only the *leading* flags belong to the producer (`echo -n`,
+  # `printf -v`). Everything from the first non-flag word on is the payload and
+  # is kept verbatim — dropping flags there ate the `--context` out of
+  # `echo "kubectl --context wonka-factory delete pod x" | sh`, and a prompt
+  # that then falls back to the ambient context names the wrong cluster.
+  while [ $i -lt $n ]; do
+    case "${GUARD_TOKENS[$i]}" in -*) i=$((i + 1)); continue ;; esac
+    break
+  done
+  while [ $i -lt $n ]; do
+    out="$out ${GUARD_TOKENS[$i]}"
+    i=$((i + 1))
+  done
+  [ -n "$out" ] && printf '%s\n' "$out"
+  return 0
 }
 
 # guard_make_recipes <segments> — the segments of the recipe behind every
@@ -319,6 +812,7 @@ guard_make_recipes() {
       i=$((i + 1))
       n=$((n + 1))
       [ $n -gt 4 ] && break 2
+      printf '#guard-src:make target %s\n' "$target"
       guard_segments "$(guard_make_recipe_of "$file" "$target")"
     done
   done <<EOF
@@ -363,6 +857,13 @@ guard_tokenize() {
   for raw in $seg; do
     t="${raw//\"/}"
     t="${t//\'/}"
+    # Backslashes go too. A nested quote is routinely written escaped —
+    # `sh -c "kubectl --context prod \"delete\" pod x"` — and stripping only the
+    # quote characters leaves `\kubectl` / `\delete`, which match neither the
+    # binary nor any subcommand vocabulary, so the whole invocation slips past.
+    # Parameter expansion, not `tr`: this runs per token of every segment of
+    # every command, and a fork here costs ~8ms per call.
+    t="${t//\\/}"
     [ -n "$t" ] && GUARD_TOKENS[${#GUARD_TOKENS[@]}]="$t"
   done
 }
@@ -380,9 +881,14 @@ guard_invocation() {
     case "$t" in
       -*) break ;;
       [A-Za-z_]*=*) i=$((i + 1)); continue ;;                # FOO=bar prefix
-      sudo|env|nohup|time|exec|stdbuf|xargs|doas)
+      sudo|env|nohup|time|exec|stdbuf|xargs|doas|command)
         # Transparent only when followed by a plain word: `command -v helm`
         # and `xargs -n1 kubectl` keep their own command word.
+        #
+        # `command` belongs here, not only in guard_embedded_invocation's skip
+        # list: `command kubectl delete pod x` really does run kubectl, and
+        # being treated as a lookup made it a free bypass. The `-*` break below
+        # is what still keeps `command -v helm` quiet.
         if [ $((i + 1)) -lt $n ]; then
           case "${GUARD_TOKENS[$((i + 1))]}" in
             -*) break ;;
@@ -556,6 +1062,32 @@ guard_is_help() {
 
 # --- misc string helpers -----------------------------------------------------
 
+# guard_where — ` Command: \`<segment>\` (from <source>).` for the prompt.
+#
+# The reason used to name the binary, the verb and the target but never the
+# command, which is the one thing a human can check at a glance. It matters most
+# for a segment that is not in what was typed at all: a line out of a script
+# body, a make recipe, a heredoc a shell is about to execute, or a pipe — hence
+# $GUARD_SRC, set from the `#guard-src:` markers the expanders emit.
+#
+# Truncating *before* substituting is load-bearing, not cosmetic. Under
+# /bin/bash 3.2 (the shebang this runs with) `${var//…}` is quadratic, and a
+# segment can be a 9 KB `-e "…"` value — substituting first is a 44-second hang,
+# which is what the "does not hang" test exists to catch.
+guard_where() {
+  local s="${GUARD_SEG:-}"
+  [ -n "$s" ] || return 0
+  s="${s:0:200}"
+  s="${s//$'\n'/ }"
+  s="$(guard_trim "$s")"
+  [ ${#s} -gt 160 ] && s="${s:0:157}..."
+  if [ -n "${GUARD_SRC:-}" ]; then
+    printf ' Command: `%s` (from %s).' "$s" "$GUARD_SRC"
+  else
+    printf ' Command: `%s`.' "$s"
+  fi
+}
+
 # guard_trim — leading/trailing whitespace stripped, pure parameter expansion
 # (no fork), for comparing a segment against a raw command-line fragment.
 guard_trim() {
@@ -633,16 +1165,47 @@ EOF
 #
 # Segments headed by a command that only prints or searches text are skipped:
 # `echo "kubectl delete …"` is documentation, not an invocation.
+#
+# `find`, `sed` and `awk` are deliberately NOT in that list — each can run a
+# command built from its own arguments (`find … -exec`, GNU `sed '1e cmd'` and
+# `s///e`, `awk '{system(…)}'`), so a segment headed by one of them still needs
+# classifying. They cost nothing in false positives: a search pattern like
+# `sed -n "/kubectl delete/p"` tokenizes to `delete/p`, which is not an exact
+# match in any subcommand vocabulary. `fd` and `xargs` are likewise absent
+# because `fd -x` and `xargs` exec by design.
 guard_embedded_invocation() {
-  local bin="$1" seg="$2" head t i n
+  local bin="$1" seg="$2" head t i n hi=0
   guard_tokenize "$seg"
   n=${#GUARD_TOKENS[@]}
   [ $n -gt 0 ] || return 1
-  head="${GUARD_TOKENS[0]##*/}"
+  # The head is what the segment is *run by*, so leading env assignments and
+  # transparent wrappers are skipped before reading it. Taking token 0 blindly
+  # meant `DOCKER_HOST=tcp://prod:2375 docker exec … mysql -e "drop …"` reported
+  # a head of `prod:2375` (`${t##*/}` of the assignment) and `FOO=bar ssh host …`
+  # a head of `FOO=bar` — so guard_is_remote_wrapper saw neither as remote, the
+  # mutation resolved against the *local* default, and it ran in silence. Any
+  # env prefix at all was a bypass of every remote-wrapper check.
+  while [ $hi -lt $n ]; do
+    case "${GUARD_TOKENS[$hi]}" in
+      [A-Za-z_]*=*)                        hi=$((hi + 1)); continue ;;
+      sudo|env|nohup|time|exec|stdbuf|doas) hi=$((hi + 1)); continue ;;
+    esac
+    break
+  done
+  [ $hi -lt $n ] || return 1
+  head="${GUARD_TOKENS[$hi]##*/}"
   case "$head" in
-    echo|printf|cat|grep|egrep|fgrep|rg|ag|command|which|type|whereis|man|sed|awk|\
-    head|tail|less|more|jq|yq|ls|find|history|comm|diff|wc|sort|uniq|tee|column|\
+    echo|printf|cat|grep|egrep|fgrep|rg|ag|command|which|type|whereis|man|\
+    head|tail|less|more|jq|yq|ls|history|comm|diff|wc|sort|uniq|tee|column|\
     \#*) return 1 ;;
+    # `git grep` and `git log -S` search text like the tools above; every other
+    # git subcommand is left to be classified, since `git` is not blanket-inert.
+    git)
+      if [ $((hi + 1)) -lt $n ]; then
+        case "${GUARD_TOKENS[$((hi + 1))]}" in
+          grep|log|show|blame|diff|config|ls-files) return 1 ;;
+        esac
+      fi ;;
   esac
   i=0
   while [ $i -lt $n ]; do
@@ -671,11 +1234,90 @@ guard_reaches() {
   guard_invocation "$1" "$2" || guard_embedded_invocation "$1" "$2"
 }
 
+# Container runtimes whose daemon may or may not be on this machine, so the
+# endpoint has to be resolved rather than assumed either way.
+GUARD_CONTAINER_HEADS='docker|podman|nerdctl'
+# Local-VM managers with no remote mode at all: colima and lima provision a VM
+# on this machine and nothing else, so `colima ssh -- …` is always local.
+GUARD_LOCAL_VM_HEADS='colima|lima'
+# Docker contexts that are a local runtime. colima and OrbStack create one
+# context per profile (colima-gravity, php-8.1), hence the suffix patterns; an
+# unrecognised name is not assumed local, it is looked up.
+GUARD_DOCKER_LOCAL_CONTEXTS='^(default|desktop-linux|orbstack.*|colima.*|rancher-desktop|minikube|lima.*|podman.*)$'
+
+# guard_docker_is_local — 0 when the container runtime this segment talks to
+# runs on this machine.
+#
+# Only the runtime's *own* flags count, and they precede its subcommand: in
+# `docker exec -i tools kubectl --context production …` the `--context` belongs
+# to kubectl, and reading it as a docker context would resolve the wrong target
+# entirely. Explicit endpoint wins, then an env prefix, then the selected
+# context — the same precedence docker itself uses.
+guard_docker_is_local() {
+  local i=0 n t ep='' ctx='' dbin
+  guard_tokenize "$GUARD_SEG"
+  n=${#GUARD_TOKENS[@]}
+  while [ $i -lt $n ]; do
+    case "${GUARD_TOKENS[$i]}" in
+      DOCKER_HOST=*)    ep="${GUARD_TOKENS[$i]#DOCKER_HOST=}";     i=$((i + 1)); continue ;;
+      CONTAINER_HOST=*) ep="${GUARD_TOKENS[$i]#CONTAINER_HOST=}";  i=$((i + 1)); continue ;;
+      DOCKER_CONTEXT=*) ctx="${GUARD_TOKENS[$i]#DOCKER_CONTEXT=}"; i=$((i + 1)); continue ;;
+      [A-Za-z_]*=*)                        i=$((i + 1)); continue ;;
+      sudo|env|nohup|time|exec|stdbuf|doas) i=$((i + 1)); continue ;;
+    esac
+    break
+  done
+  i=$((i + 1))                                   # past the runtime word itself
+  while [ $i -lt $n ]; do
+    t="${GUARD_TOKENS[$i]}"
+    case "$t" in
+      -H|--host)    ep="${GUARD_TOKENS[$((i + 1))]-}";  i=$((i + 2)); continue ;;
+      --host=*)     ep="${t#--host=}";                  i=$((i + 1)); continue ;;
+      -c|--context) ctx="${GUARD_TOKENS[$((i + 1))]-}"; i=$((i + 2)); continue ;;
+      --context=*)  ctx="${t#--context=}";              i=$((i + 1)); continue ;;
+      -*)           i=$((i + 1)); continue ;;
+      *)            break ;;                     # the subcommand; the rest is not ours
+    esac
+  done
+  [ -n "$ep" ]  || ep="${DOCKER_HOST:-}"
+  [ -n "$ctx" ] || ctx="${DOCKER_CONTEXT:-}"
+  # An endpoint is conclusive on its own: a unix socket or a file descriptor is
+  # this machine, tcp:// and ssh:// are not.
+  if [ -n "$ep" ]; then
+    case "$ep" in unix://*|fd://*|/*) return 0 ;; *) return 1 ;; esac
+  fi
+  if [ -z "$ctx" ]; then
+    [ "$GUARD_HEAD" = docker ] || return 0       # podman/nerdctl default to local
+    dbin="$(command -v docker 2>/dev/null)" || return 1
+    ctx=$("$dbin" context show 2>/dev/null) || ctx=''
+    [ -n "$ctx" ] || return 1
+  fi
+  [[ "$ctx" =~ $GUARD_DOCKER_LOCAL_CONTEXTS ]] && return 0
+  # An unfamiliar name may still be a local socket — ask docker rather than
+  # guess from the name.
+  dbin="$(command -v docker 2>/dev/null)" || return 1
+  ep=$("$dbin" context inspect "$ctx" --format '{{.Endpoints.docker.Host}}' 2>/dev/null) || ep=''
+  case "$ep" in unix://*|fd://*|/*) return 0 ;; *) return 1 ;; esac
+}
+
 # guard_is_remote_wrapper — 0 when the binary was reached through something that
 # runs it on another machine or in another container.
+#
+# A container runtime is only "somewhere else" if its daemon is, and on a laptop
+# it usually is not: colima, OrbStack and Docker Desktop all expose a unix
+# socket here. Prompting on every `docker exec -i db mysql` against a throwaway
+# dev container is the reflexive-approval failure mode rule 1 warns about, and
+# the inner command still carries its own target and is still classified — so
+# `docker exec -i tools kubectl --context production delete …` asks on the
+# strength of *production*, which is the honest reason.
 guard_is_remote_wrapper() {
   [ -n "$GUARD_HEAD" ] || return 1
-  [[ "$GUARD_HEAD" =~ ^($GUARD_REMOTE_HEADS)$ ]]
+  [[ "$GUARD_HEAD" =~ ^($GUARD_REMOTE_HEADS)$ ]] || return 1
+  [[ "$GUARD_HEAD" =~ ^($GUARD_LOCAL_VM_HEADS)$ ]] && return 1
+  if [[ "$GUARD_HEAD" =~ ^($GUARD_CONTAINER_HEADS)$ ]] && guard_docker_is_local; then
+    return 1
+  fi
+  return 0
 }
 
 # guard_flag_value <flag-alternation> — value of a flag given on the
