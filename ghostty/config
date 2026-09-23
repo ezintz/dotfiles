@@ -22,14 +22,14 @@ font-size = 13
 # passthrough (cmux issue #879, closed but still reproducing in 0.64.25).
 # It has nothing to do with how symbols are drawn: removing it left the status
 # line just as broken, and the font lines above are what fixed that.
-background-opacity = 0.65
+background-opacity = 0.75
 background-blur-radius = 20
 # Without this a cell with an explicit background stays opaque, so every panel
 # a TUI fills is a solid block on the translucent window -- Claude Code's
 # changes pane most visibly, since its composerSidebarBackground cannot be
 # unset: the theme format has no "default background" value. Even so a fill
 # stays darker than the window, since it is drawn at this opacity on top of
-# the window background drawn at it too: 0.65 leaves such a fill ~88% opaque.
+# the window background drawn at it too: 0.75 leaves such a fill ~94% opaque.
 background-opacity-cells = true
 custom-shader = ~/.config/ghostty/passthrough.glsl
 
