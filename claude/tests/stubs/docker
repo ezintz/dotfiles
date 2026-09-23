@@ -1,0 +1,19 @@
+#!/bin/sh
+# Test stub: makes docker endpoint resolution deterministic for guards.bats, so
+# a case that omits --context does not depend on the developer's real docker
+# contexts (which differ per machine and are all local on most of them).
+#
+# $DOCKER_TEST_CONTEXT selects the active context; anything ending in
+# `-remote` resolves to a tcp:// endpoint, everything else to a unix socket.
+if [ "${1:-}" = "context" ] && [ "${2:-}" = "show" ]; then
+  printf '%s\n' "${DOCKER_TEST_CONTEXT:-colima-gravity}"
+  exit 0
+fi
+if [ "${1:-}" = "context" ] && [ "${2:-}" = "inspect" ]; then
+  case "${3:-}" in
+    *-remote) printf 'tcp://%s:2375\n' "${3}" ;;
+    *)        printf 'unix:///var/run/docker.sock\n' ;;
+  esac
+  exit 0
+fi
+exit 0

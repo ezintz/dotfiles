@@ -1496,6 +1496,67 @@ allowlist() {
     'kubectl --context wonka-factory get pods' 'EOF' 'bash deploy.sh')"
 }
 
+# --- container runtimes are transport, not an environment -------------------
+#
+# A wrapper only means "somewhere else" if it actually runs somewhere else.
+# colima, OrbStack and Docker Desktop all expose a unix socket on this machine,
+# so a blanket "remote via docker" prompted on every local dev container — while
+# the one docker invocation that really is remote slipped through.
+
+@test "docker: a local daemon is transport, so the inner command decides" {
+  assert_pass 'docker exec -i db mysql -e "drop table t"'
+  assert_pass 'docker exec -i db psql -c "truncate sessions"'
+  assert_pass 'docker --context colima-gravity exec -i db mysql -e "drop table t"'
+  assert_pass 'docker compose exec -T db mysql -e "delete from sessions"'
+  # colima and lima provision a VM here and have no remote mode at all.
+  assert_pass 'colima ssh -- mysql -e "drop table t"'
+}
+
+@test "docker: a non-local daemon still asks" {
+  assert_ask 'DOCKER_HOST=tcp://prod:2375 docker exec -i db mysql -e "drop table t"'
+  assert_ask 'docker -H tcp://prod:2375 exec -i db mysql -e "drop table t"'
+  assert_ask 'docker --context swarm-remote exec -i db psql -c "truncate sessions"'
+  export DOCKER_TEST_CONTEXT=swarm-remote
+  assert_ask 'docker exec -i db mysql -e "drop table t"'
+  unset DOCKER_TEST_CONTEXT
+  assert_reason 'DOCKER_HOST=tcp://prod:2375 docker exec -i db mysql -e "drop table t"' \
+    'remote via docker'
+}
+
+@test "docker: the inner command's own target is what gets named" {
+  # The container is local; production is not. The prompt must say production,
+  # not "remote via docker" — naming the wrong target is how the wrong
+  # environment gets approved.
+  assert_ask 'docker exec -i tools kubectl --context production delete pod api'
+  assert_reason 'docker exec -i tools kubectl --context production delete pod api' \
+    'production'
+  assert_ask 'docker exec -i db mysql -h prod-db.internal -e "drop table t"'
+  assert_reason 'docker exec -i db mysql -h prod-db.internal -e "drop table t"' \
+    'prod-db.internal'
+  # docker's own --context is not the inner command's.
+  assert_pass 'docker --context colima-gravity exec -i tools kubectl --context orbstack delete pod api'
+}
+
+@test "wrappers: an env-assignment prefix does not hide the wrapper" {
+  # guard_embedded_invocation took token 0 as the head, so any VAR=value prefix
+  # produced a head like `FOO=bar` that matched no remote wrapper — the command
+  # then resolved against the local default and ran in silence.
+  assert_ask 'FOO=bar ssh dbhost mysql -e "drop table t"'
+  assert_reason 'FOO=bar ssh dbhost mysql -e "drop table t"' 'remote via ssh'
+  assert_ask 'exec ssh dbhost mysql -e "drop table t"'
+  assert_ask 'LC_ALL=C sudo ssh dbhost mysql -e "drop table t"'
+  # Still inert when the prefix is on something that only prints.
+  assert_pass 'FOO=bar echo "kubectl --context wonka-factory delete pod x"'
+  assert_pass 'FOO=bar git grep "kubectl --context wonka-factory delete pod x"'
+}
+
+@test "kube: a colima context carries its profile name" {
+  assert_pass 'kubectl --context colima delete pod hamster-runner-1'
+  assert_pass 'kubectl --context colima-gravity delete pod hamster-runner-1'
+  # The suffix must be the `colima-<profile>` shape, same as kind-/k3d-.
+  assert_ask 'kubectl --context colima.prod delete pod hamster-runner-1'
+}
+
 # --- the prompt names the command -------------------------------------------
 
 @test "the prompt names the offending command and where it came from" {

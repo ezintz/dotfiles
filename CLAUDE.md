@@ -189,7 +189,11 @@ Every rule below exists because breaking it produced a real bug here.
    the test fail** before trusting it: two tests here passed against reverted
    code, one because the `cp -i` alias silently blocked the revert, the other
    because it reproduced the symptom rather than the harm. A green suite proves
-   nothing about a bug it never actually reproduced.
+   nothing about a bug it never actually reproduced. Anything resolved by asking
+   a real binary (kube context, docker endpoint, TF workspace) needs a stub in
+   `claude/tests/stubs/` — and the stub must be `chmod +x`, or `command -v`
+   silently falls through to the real tool and the case passes on whatever this
+   machine happens to be configured with.
 8. **Benchmark under `/bin/bash`, not the Homebrew bash on `$PATH`.** The hook
    runs under its shebang, i.e. bash 3.2, where `${var//[chars]/}` is quadratic —
    stripping `;(),` from a single 9 KB word takes **44 seconds** there against

@@ -1174,11 +1174,26 @@ EOF
 # match in any subcommand vocabulary. `fd` and `xargs` are likewise absent
 # because `fd -x` and `xargs` exec by design.
 guard_embedded_invocation() {
-  local bin="$1" seg="$2" head t i n
+  local bin="$1" seg="$2" head t i n hi=0
   guard_tokenize "$seg"
   n=${#GUARD_TOKENS[@]}
   [ $n -gt 0 ] || return 1
-  head="${GUARD_TOKENS[0]##*/}"
+  # The head is what the segment is *run by*, so leading env assignments and
+  # transparent wrappers are skipped before reading it. Taking token 0 blindly
+  # meant `DOCKER_HOST=tcp://prod:2375 docker exec … mysql -e "drop …"` reported
+  # a head of `prod:2375` (`${t##*/}` of the assignment) and `FOO=bar ssh host …`
+  # a head of `FOO=bar` — so guard_is_remote_wrapper saw neither as remote, the
+  # mutation resolved against the *local* default, and it ran in silence. Any
+  # env prefix at all was a bypass of every remote-wrapper check.
+  while [ $hi -lt $n ]; do
+    case "${GUARD_TOKENS[$hi]}" in
+      [A-Za-z_]*=*)                        hi=$((hi + 1)); continue ;;
+      sudo|env|nohup|time|exec|stdbuf|doas) hi=$((hi + 1)); continue ;;
+    esac
+    break
+  done
+  [ $hi -lt $n ] || return 1
+  head="${GUARD_TOKENS[$hi]##*/}"
   case "$head" in
     echo|printf|cat|grep|egrep|fgrep|rg|ag|command|which|type|whereis|man|\
     head|tail|less|more|jq|yq|ls|history|comm|diff|wc|sort|uniq|tee|column|\
@@ -1186,8 +1201,8 @@ guard_embedded_invocation() {
     # `git grep` and `git log -S` search text like the tools above; every other
     # git subcommand is left to be classified, since `git` is not blanket-inert.
     git)
-      if [ $n -gt 1 ]; then
-        case "${GUARD_TOKENS[1]}" in
+      if [ $((hi + 1)) -lt $n ]; then
+        case "${GUARD_TOKENS[$((hi + 1))]}" in
           grep|log|show|blame|diff|config|ls-files) return 1 ;;
         esac
       fi ;;
@@ -1219,11 +1234,90 @@ guard_reaches() {
   guard_invocation "$1" "$2" || guard_embedded_invocation "$1" "$2"
 }
 
+# Container runtimes whose daemon may or may not be on this machine, so the
+# endpoint has to be resolved rather than assumed either way.
+GUARD_CONTAINER_HEADS='docker|podman|nerdctl'
+# Local-VM managers with no remote mode at all: colima and lima provision a VM
+# on this machine and nothing else, so `colima ssh -- …` is always local.
+GUARD_LOCAL_VM_HEADS='colima|lima'
+# Docker contexts that are a local runtime. colima and OrbStack create one
+# context per profile (colima-gravity, php-8.1), hence the suffix patterns; an
+# unrecognised name is not assumed local, it is looked up.
+GUARD_DOCKER_LOCAL_CONTEXTS='^(default|desktop-linux|orbstack.*|colima.*|rancher-desktop|minikube|lima.*|podman.*)$'
+
+# guard_docker_is_local — 0 when the container runtime this segment talks to
+# runs on this machine.
+#
+# Only the runtime's *own* flags count, and they precede its subcommand: in
+# `docker exec -i tools kubectl --context production …` the `--context` belongs
+# to kubectl, and reading it as a docker context would resolve the wrong target
+# entirely. Explicit endpoint wins, then an env prefix, then the selected
+# context — the same precedence docker itself uses.
+guard_docker_is_local() {
+  local i=0 n t ep='' ctx='' dbin
+  guard_tokenize "$GUARD_SEG"
+  n=${#GUARD_TOKENS[@]}
+  while [ $i -lt $n ]; do
+    case "${GUARD_TOKENS[$i]}" in
+      DOCKER_HOST=*)    ep="${GUARD_TOKENS[$i]#DOCKER_HOST=}";     i=$((i + 1)); continue ;;
+      CONTAINER_HOST=*) ep="${GUARD_TOKENS[$i]#CONTAINER_HOST=}";  i=$((i + 1)); continue ;;
+      DOCKER_CONTEXT=*) ctx="${GUARD_TOKENS[$i]#DOCKER_CONTEXT=}"; i=$((i + 1)); continue ;;
+      [A-Za-z_]*=*)                        i=$((i + 1)); continue ;;
+      sudo|env|nohup|time|exec|stdbuf|doas) i=$((i + 1)); continue ;;
+    esac
+    break
+  done
+  i=$((i + 1))                                   # past the runtime word itself
+  while [ $i -lt $n ]; do
+    t="${GUARD_TOKENS[$i]}"
+    case "$t" in
+      -H|--host)    ep="${GUARD_TOKENS[$((i + 1))]-}";  i=$((i + 2)); continue ;;
+      --host=*)     ep="${t#--host=}";                  i=$((i + 1)); continue ;;
+      -c|--context) ctx="${GUARD_TOKENS[$((i + 1))]-}"; i=$((i + 2)); continue ;;
+      --context=*)  ctx="${t#--context=}";              i=$((i + 1)); continue ;;
+      -*)           i=$((i + 1)); continue ;;
+      *)            break ;;                     # the subcommand; the rest is not ours
+    esac
+  done
+  [ -n "$ep" ]  || ep="${DOCKER_HOST:-}"
+  [ -n "$ctx" ] || ctx="${DOCKER_CONTEXT:-}"
+  # An endpoint is conclusive on its own: a unix socket or a file descriptor is
+  # this machine, tcp:// and ssh:// are not.
+  if [ -n "$ep" ]; then
+    case "$ep" in unix://*|fd://*|/*) return 0 ;; *) return 1 ;; esac
+  fi
+  if [ -z "$ctx" ]; then
+    [ "$GUARD_HEAD" = docker ] || return 0       # podman/nerdctl default to local
+    dbin="$(command -v docker 2>/dev/null)" || return 1
+    ctx=$("$dbin" context show 2>/dev/null) || ctx=''
+    [ -n "$ctx" ] || return 1
+  fi
+  [[ "$ctx" =~ $GUARD_DOCKER_LOCAL_CONTEXTS ]] && return 0
+  # An unfamiliar name may still be a local socket — ask docker rather than
+  # guess from the name.
+  dbin="$(command -v docker 2>/dev/null)" || return 1
+  ep=$("$dbin" context inspect "$ctx" --format '{{.Endpoints.docker.Host}}' 2>/dev/null) || ep=''
+  case "$ep" in unix://*|fd://*|/*) return 0 ;; *) return 1 ;; esac
+}
+
 # guard_is_remote_wrapper — 0 when the binary was reached through something that
 # runs it on another machine or in another container.
+#
+# A container runtime is only "somewhere else" if its daemon is, and on a laptop
+# it usually is not: colima, OrbStack and Docker Desktop all expose a unix
+# socket here. Prompting on every `docker exec -i db mysql` against a throwaway
+# dev container is the reflexive-approval failure mode rule 1 warns about, and
+# the inner command still carries its own target and is still classified — so
+# `docker exec -i tools kubectl --context production delete …` asks on the
+# strength of *production*, which is the honest reason.
 guard_is_remote_wrapper() {
   [ -n "$GUARD_HEAD" ] || return 1
-  [[ "$GUARD_HEAD" =~ ^($GUARD_REMOTE_HEADS)$ ]]
+  [[ "$GUARD_HEAD" =~ ^($GUARD_REMOTE_HEADS)$ ]] || return 1
+  [[ "$GUARD_HEAD" =~ ^($GUARD_LOCAL_VM_HEADS)$ ]] && return 1
+  if [[ "$GUARD_HEAD" =~ ^($GUARD_CONTAINER_HEADS)$ ]] && guard_docker_is_local; then
+    return 1
+  fi
+  return 0
 }
 
 # guard_flag_value <flag-alternation> — value of a flag given on the
