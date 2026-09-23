@@ -1,0 +1,19 @@
+{
+  "name": "dotfiles",
+  "version": "1.0.0",
+  "description": "Env guards that make destructive commands against non-local targets (kubectl, helm, terraform, argocd, gh, mysql, …) ask first, plus review, debugging and authoring skills.",
+  "author": {
+    "name": "Eduard Zintz",
+    "url": "https://github.com/ezintz"
+  },
+  "homepage": "https://github.com/ezintz/dotfiles/tree/main/claude/plugin",
+  "repository": "https://github.com/ezintz/dotfiles",
+  "license": "WTFPL",
+  "keywords": [
+    "guardrails",
+    "kubernetes",
+    "terraform",
+    "hooks",
+    "skills"
+  ]
+}

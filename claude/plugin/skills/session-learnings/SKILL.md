@@ -100,7 +100,7 @@ Then check the second-copy claim rather than asserting it — for each rule
 touched this session, not the whole directory, which is `rule-reviewer`'s job:
 
 ```bash
-python3 ~/.claude/skills/rule-reviewer/scripts/comment-inventory.py \
+python3 "${CLAUDE_SKILL_DIR}/../rule-reviewer/scripts/comment-inventory.py" \
     --rule <name> --overlap
 ```
 

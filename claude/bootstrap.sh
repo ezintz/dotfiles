@@ -1,70 +1,41 @@
 #!/usr/bin/env sh
 #
-# Bootstrap the Claude Code env-guards on any machine WITHOUT cloning the
-# dotfiles repo. Installs the global instructions + the PreToolUse guard hooks,
-# and registers them in settings.json (non-destructive, idempotent).
+# The Claude Code part of these dotfiles, on a machine WITHOUT the repo cloned:
 #
-# Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/claude/bootstrap.sh | sh
 #
 # Installs:
-#   ~/.claude/CLAUDE.md                       global instructions
-#   ~/.claude/rules/*.md                      global path-scoped rules
-#   ~/.claude/refs/*.md                       reference docs the rules link
-#   ~/.claude/hooks/env-guard.sh              the one PreToolUse hook (executable)
-#   ~/.claude/hooks/guard-lib.sh              shared command-parsing helpers
-#   ~/.claude/hooks/guards/*.guard            one profile per guarded tool
-#   ~/.claude/settings.json                   PreToolUse hook + plugins merged
+#   the `dotfiles` plugin from the `ezintz` marketplace (this repo): the
+#   env-guard PreToolUse hook, skills and agents
+#   ~/.claude/CLAUDE.md                     global instructions (an existing one
+#                                           is kept as CLAUDE.md.backup-<time>)
+#   ~/.claude/rules/*.md, ~/.claude/refs/*.md   path-scoped rules and the refs they name
+#   ~/.claude/settings.json                 marketplace, plugins and ask rules merged in
 #
-# Safe to re-run: existing settings are preserved and hooks are not duplicated.
+# Plugins cannot ship rules, global instructions or permissions, which is why
+# those three are still fetched and merged here.
+#
+# Needs curl or wget, and jq (preinstalled on macOS 15+). Safe to re-run:
+# settings are merged additively and nothing already there is dropped.
 # Override the source with CLAUDE_BOOTSTRAP_BASE (e.g. to pin a branch/fork).
 
 set -eu
 
 BASE="${CLAUDE_BOOTSTRAP_BASE:-https://raw.githubusercontent.com/ezintz/dotfiles/main/claude}"
+MARKETPLACE_REPO="${CLAUDE_BOOTSTRAP_REPO:-ezintz/dotfiles}"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS="$CLAUDE_DIR/settings.json"
 
-# The only registered hook.
-HOOK="env-guard.sh"
-HOOK_STATUS="Checking target environment..."
-
-# Sourced by the hook, never registered. A raw.githubusercontent fetch cannot
-# glob a remote directory, so unlike bin/dotfiles this list is explicit —
-# adding a guard means adding its filename here too.
-# Global rules, and the refs they link. Explicit for the same reason as
-# PROFILES below -- a raw.githubusercontent fetch cannot list a directory. A
-# rule whose body points at a ref must have that ref here too, or the pointer
-# lands on nothing: the instructions stopped carrying the placement taxonomy
-# inline once it moved to refs/knowledge-placement.md.
+# A raw.githubusercontent fetch cannot list a directory, so these are explicit.
+# A rule whose body points at a ref needs that ref here too, or the pointer
+# lands on nothing.
 RULES="knowledge-placement.md"
 REFS="knowledge-placement.md"
 
-SUPPORT="guard-lib.sh"
-PROFILES="_kube-context.sh
-_scm-origin.sh
-_sql.sh
-kubectl.guard
-helm.guard
-terraform.guard
-openstack.guard
-argocd.guard
-ansible.guard
-helmfile.guard
-terragrunt.guard
-skaffold.guard
-git.guard
-gh.guard
-glab.guard
-mysql.guard
-psql.guard"
-
-# Hooks from the pre-dispatcher one-hook-per-tool layout, removed from
-# settings.json and from disk so nothing points at a script that is gone.
-LEGACY_HOOKS="kubectl-env-guard.sh
-terraform-env-guard.sh
-openstack-env-guard.sh
-argocd-env-guard.sh"
+# Everything the pre-plugin layouts copied into ~/.claude/hooks. The plugin
+# brings the guard now; left in place, a stale settings.json entry would run
+# the old copy as well, and a missing one fails every Bash call.
+LEGACY_HOOK_FILES="env-guard.sh guard-lib.sh kubectl-env-guard.sh terraform-env-guard.sh openstack-env-guard.sh argocd-env-guard.sh"
 
 fetch() { # fetch <url> <dest>
   if command -v curl >/dev/null 2>&1; then
@@ -77,15 +48,23 @@ fetch() { # fetch <url> <dest>
   fi
 }
 
-command -v python3 >/dev/null 2>&1 || {
-  echo "error: python3 is required to merge settings.json" >&2
+command -v jq >/dev/null 2>&1 || {
+  echo "error: jq is required (to merge settings.json, and by the env guard itself)" >&2
   exit 1
 }
 
-mkdir -p "$CLAUDE_DIR/hooks/guards" "$CLAUDE_DIR/rules" "$CLAUDE_DIR/refs"
+mkdir -p "$CLAUDE_DIR/rules" "$CLAUDE_DIR/refs"
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
 
 echo "→ downloading CLAUDE.md"
-fetch "$BASE/global-instructions.md" "$CLAUDE_DIR/CLAUDE.md"
+fetch "$BASE/global-instructions.md" "$tmp"
+if [ -f "$CLAUDE_DIR/CLAUDE.md" ] && ! cmp -s "$tmp" "$CLAUDE_DIR/CLAUDE.md"; then
+  backup="$CLAUDE_DIR/CLAUDE.md.backup-$(date +%Y%m%d%H%M%S)"
+  echo "   keeping your previous CLAUDE.md as ${backup##*/}"
+  mv "$CLAUDE_DIR/CLAUDE.md" "$backup"
+fi
+cp "$tmp" "$CLAUDE_DIR/CLAUDE.md"
 
 for file in $RULES; do
   echo "→ downloading rules/$file"
@@ -94,115 +73,53 @@ done
 
 for file in $REFS; do
   echo "→ downloading refs/$file"
-  fetch "$BASE/refs/$file" "$CLAUDE_DIR/refs/$file"
+  fetch "$BASE/plugin/refs/$file" "$CLAUDE_DIR/refs/$file"
 done
 
-for file in $SUPPORT; do
-  echo "→ downloading $file"
-  fetch "$BASE/hooks/$file" "$CLAUDE_DIR/hooks/$file"
-done
-
-for file in $PROFILES; do
-  echo "→ downloading guards/$file"
-  fetch "$BASE/hooks/guards/$file" "$CLAUDE_DIR/hooks/guards/$file"
-done
-
-echo "→ downloading $HOOK"
-fetch "$BASE/hooks/$HOOK" "$CLAUDE_DIR/hooks/$HOOK"
-chmod +x "$CLAUDE_DIR/hooks/$HOOK"
-
-for file in $LEGACY_HOOKS; do
+for file in $LEGACY_HOOK_FILES; do
   [ -e "$CLAUDE_DIR/hooks/$file" ] || continue
-  echo "→ removing superseded $file"
+  echo "→ removing superseded hooks/$file"
   rm -f "$CLAUDE_DIR/hooks/$file"
 done
+if [ -d "$CLAUDE_DIR/hooks/guards" ]; then
+  echo "→ removing superseded hooks/guards/"
+  rm -rf "$CLAUDE_DIR/hooks/guards"
+fi
 
-echo "→ registering PreToolUse hook, wrapper ask rules and plugins in settings.json"
-python3 - "$SETTINGS" "$HOOK" "$HOOK_STATUS" <<'PY'
-import json, os, sys
-
-path, hook, status = sys.argv[1], sys.argv[2], sys.argv[3]
-
-# Marketplaces to know about, and plugins to force-enable from them. Claude Code
-# auto-registers claude-plugins-official on first interactive launch, but naming
-# it here removes the ordering dependency when bootstrap runs on a fresh machine.
-marketplaces = {
-    "claude-plugins-official": {
-        "source": {"source": "github", "repo": "anthropics/claude-plugins-official"},
-    },
-}
-plugins = [
-    "skill-creator@claude-plugins-official",
-]
-
+echo "→ merging marketplace, plugins and ask rules into settings.json"
+[ -s "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 # `make` is the one wrapper with nothing to classify: a target name says nothing
-# about what it runs. The hook expands the recipe when it can read the Makefile,
-# and these name-based rules are the backstop for when it cannot (an included
-# fragment, a recipe built from variables). Every other wrapper has a real
-# profile instead. Keep in sync with claude/settings.json by hand — bootstrap
-# cannot read the repo.
-ask_rules = [
-    "Bash(make deploy*)",
-    "Bash(make apply*)",
-    "Bash(make destroy*)",
-    "Bash(make release*)",
-    "Bash(make publish*)",
-]
+# about what it runs. The hook expands the recipe when it can read the
+# Makefile; these name-based rules are the backstop for when it cannot. Keep in
+# sync with claude/settings.json by hand — bootstrap cannot read the repo.
+jq --arg repo "$MARKETPLACE_REPO" '
+  .extraKnownMarketplaces //= {}
+  | .extraKnownMarketplaces["claude-plugins-official"] //= {source: {source: "github", repo: "anthropics/claude-plugins-official"}}
+  | .extraKnownMarketplaces.ezintz //= {source: {source: "github", repo: $repo}}
+  | .enabledPlugins //= {}
+  | .enabledPlugins["dotfiles@ezintz"] //= true
+  | .enabledPlugins["skill-creator@claude-plugins-official"] //= true
+  | .permissions.ask = ((.permissions.ask // []) as $have
+      | $have + (["Bash(make deploy*)", "Bash(make apply*)", "Bash(make destroy*)",
+                  "Bash(make release*)", "Bash(make publish*)"] - $have))
+  | if .hooks.PreToolUse then
+      .hooks.PreToolUse |= (map(.hooks |= map(select((.command // "")
+          | test("^~/\\.claude/hooks/(env-guard|kubectl-env-guard|terraform-env-guard|openstack-env-guard|argocd-env-guard)\\.sh$") | not)))
+        | map(select((.hooks | length) > 0)))
+      | if (.hooks.PreToolUse | length) == 0 then del(.hooks.PreToolUse) else . end
+    else . end
+  | if .hooks == {} then del(.hooks) else . end
+' "$SETTINGS" > "$tmp"
+cp "$tmp" "$SETTINGS"
 
-entry = {
-    "type": "command",
-    "command": f"~/.claude/hooks/{hook}",
-    "timeout": 15,
-    "statusMessage": status,
-}
+# settings.json alone makes Claude Code offer the plugin on its next start;
+# with the CLI on PATH it is installed right away instead.
+if command -v claude >/dev/null 2>&1; then
+  echo "→ installing the dotfiles plugin"
+  claude plugin marketplace add "$MARKETPLACE_REPO" >/dev/null 2>&1 || true
+  claude plugin install dotfiles@ezintz
+else
+  echo "→ claude is not on PATH; install the plugin later with: claude plugin install dotfiles@ezintz"
+fi
 
-# Entries from the one-hook-per-tool layout the dispatcher replaced. Left in
-# place they would run scripts this bootstrap just deleted, and Claude Code
-# treats a hook that fails to execute as a hard error on every Bash call.
-legacy = {
-    "~/.claude/hooks/kubectl-env-guard.sh",
-    "~/.claude/hooks/terraform-env-guard.sh",
-    "~/.claude/hooks/openstack-env-guard.sh",
-    "~/.claude/hooks/argocd-env-guard.sh",
-}
-
-try:
-    with open(path) as f:
-        data = json.load(f)
-except (FileNotFoundError, ValueError):
-    data = {}
-
-pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
-block = next((b for b in pre if b.get("matcher") == "Bash"), None)
-if block is None:
-    block = {"matcher": "Bash", "hooks": []}
-    pre.append(block)
-
-cmds = [h for h in block.setdefault("hooks", []) if h.get("command") not in legacy]
-if entry["command"] not in {h.get("command") for h in cmds}:
-    cmds.append(entry)
-block["hooks"] = cmds
-
-# Additive: never drop a marketplace or plugin the user enabled by hand.
-known = data.setdefault("extraKnownMarketplaces", {})
-for name, spec in marketplaces.items():
-    known.setdefault(name, spec)
-
-enabled = data.setdefault("enabledPlugins", {})
-for plugin in plugins:
-    enabled.setdefault(plugin, True)
-
-# Additive too: an ask list the user curated by hand is added to, never replaced.
-ask = data.setdefault("permissions", {}).setdefault("ask", [])
-for rule in ask_rules:
-    if rule not in ask:
-        ask.append(rule)
-
-os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-with open(path, "w") as f:
-    json.dump(data, f, indent=2)
-    f.write("\n")
-print("   settings.json updated")
-PY
-
-echo "✓ done — reload Claude Code for the hooks to take effect."
+echo "✓ done — restart Claude Code for the plugin and hook to take effect."

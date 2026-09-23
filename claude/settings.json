@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "auto",
     "ask": [
       "Bash(make deploy*)",
       "Bash(make apply*)",
@@ -32,19 +31,6 @@
     "hookify@claude-plugins-official": false
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/env-guard.sh",
-            "timeout": 15,
-            "statusMessage": "Checking target environment..."
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [
@@ -80,9 +66,6 @@
   "includeCoAuthoredBy": false,
   "effortLevel": "medium",
   "awaySummaryEnabled": false,
-  "skipDangerousModePermissionPrompt": true,
-  "remoteControlAtStartup": true,
-  "skipAutoPermissionPrompt": true,
   "theme": "custom:onedark",
   "tui": "fullscreen",
   "env": {

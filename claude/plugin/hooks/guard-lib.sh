@@ -31,7 +31,7 @@
 set -u
 set -f    # no globbing while word-splitting untrusted command strings
 
-GUARD_JQ="$(command -v jq || echo /usr/bin/jq)"
+GUARD_JQ="${GUARD_JQ:-$(command -v jq || echo /usr/bin/jq)}"
 
 GUARD_TOKENS=()
 GUARD_ARGS=()

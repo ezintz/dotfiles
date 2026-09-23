@@ -1618,3 +1618,20 @@ allowlist() {
   assert_ask 'terraform stacks demolish-everything'
   assert_ask 'terraform stacks deployment-run detonate'
 }
+
+# =============================================================================
+# without jq nothing can be parsed, so a guarded binary asks instead of passing
+# =============================================================================
+
+@test "no jq: a command naming a guarded binary asks" {
+  run --separate-stderr env GUARD_JQ=/nonexistent/jq "$HOOK" \
+    <<<'{"cwd":"/tmp","tool_input":{"command":"kubectl --context wonka-factory delete ns oompa"}}'
+  [[ "$output" == *'"permissionDecision":"ask"'* ]]
+  [[ "$output" == *'jq is not installed'* ]]
+}
+
+@test "no jq: a command naming no guarded binary passes" {
+  run --separate-stderr env GUARD_JQ=/nonexistent/jq "$HOOK" \
+    <<<'{"cwd":"/tmp","tool_input":{"command":"ls -la ~/github-projects && cat kubectl-helper.md"}}'
+  [ -z "$output" ]
+}

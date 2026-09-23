@@ -7,6 +7,8 @@
 
 set -euo pipefail
 
+## Loose skills live one level down in ~/.claude/skills; a plugin linked there
+## (this repo's is ~/.claude/skills/dotfiles) keeps its own under skills/.
 SKILLS_DIR="$HOME/.claude/skills"
 OUT_DIR="$HOME/claude-skills"
 
@@ -21,7 +23,7 @@ mkdir -p "$OUT_DIR"
 specific=("$@")
 exported=0
 
-for dir in "$SKILLS_DIR"/*/; do
+for dir in "$SKILLS_DIR"/*/ "$SKILLS_DIR"/*/skills/*/; do
   [[ ! -d "$dir" ]] && continue
   name="$(basename "$dir")"
   [[ "$name" == .* ]] && continue

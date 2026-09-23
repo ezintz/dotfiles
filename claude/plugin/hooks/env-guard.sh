@@ -46,6 +46,24 @@ set -u
 GUARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$GUARD_DIR/guard-lib.sh"
 
+# Without jq nothing can be parsed or classified, and exiting 0 here used to
+# mean every destructive command ran unprompted on any machine missing it (a
+# fresh Linux box). Asking on *every* call would be approved reflexively, so
+# only a payload that names a guarded binary asks; the list is read from the
+# profiles' GUARD_BINS so it cannot drift from what is actually guarded.
+if [ ! -x "$GUARD_JQ" ]; then
+  GUARD_RAW_INPUT=$(cat)
+  set +f
+  GUARD_BIN_RE=$(sed -n "s/^GUARD_BINS='\(.*\)'/\1/p" "$GUARD_DIR"/guards/*.guard | tr ' \n' '||')
+  set -f
+  GUARD_BIN_RE="${GUARD_BIN_RE%|}"
+  [ -n "$GUARD_BIN_RE" ] || exit 0
+  if printf '%s' "$GUARD_RAW_INPUT" | grep -qE "(^|[^[:alnum:]_-])($GUARD_BIN_RE)([^[:alnum:]_-]|$)"; then
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"env-guard cannot classify this command: jq is not installed, so its target cannot be checked. Install jq to restore the guard. Explicit user confirmation required."}}'
+  fi
+  exit 0
+fi
+
 GUARD_INPUT=$(guard_input) || exit 0
 # No newline back means no command field at all (a non-Bash tool call).
 case "$GUARD_INPUT" in

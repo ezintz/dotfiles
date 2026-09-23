@@ -1,19 +1,19 @@
 .DS_Store?
 *.local
 bin/phpstorm
-claude/skills/*-workspace/
+claude/plugin/skills/*-workspace/
 
-# Not-yet-ready skills/refs/agents: kept on disk (bin/dotfiles links them
-# locally regardless of git-tracking status) but not checked in.
-claude/skills/code-review/
-claude/skills/code-review-and-quality/
-claude/skills/git-diff/
-claude/skills/performance-optimization/
-claude/skills/security-and-hardening/
-claude/refs/*
+# Not-yet-ready skills/refs/agents: loaded on this machine (the plugin is
+# linked in place, tracked or not) but never published with it.
+claude/plugin/skills/code-review/
+claude/plugin/skills/code-review-and-quality/
+claude/plugin/skills/git-diff/
+claude/plugin/skills/performance-optimization/
+claude/plugin/skills/security-and-hardening/
+claude/plugin/refs/*
 ## Graduated: three skills link it, so it has to travel with them.
-!claude/refs/knowledge-placement.md
-claude/agents/
+!claude/plugin/refs/knowledge-placement.md
+claude/plugin/agents/
 
 # Byte-compiled cache from the skills' Python helpers, which import each other.
 __pycache__/

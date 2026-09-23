@@ -39,8 +39,10 @@ Project memory is the one that sits outside that shape, as `./CLAUDE.md` against
 
 `~/.claude` is not a repository — its entries symlink into the dotfiles
 checkout, so a user-level write never appears in the current project's
-`git status` and needs `git -C`. The deployed name differs from the tracked one:
-`~/.claude/CLAUDE.md` is `claude/global-instructions.md`.
+`git status` and needs `git -C`. Two deployed names differ from the tracked
+ones: `~/.claude/CLAUDE.md` is `claude/global-instructions.md`, and the skills,
+agents, refs and hooks of the `dotfiles` plugin live in `claude/plugin/`, linked
+as a whole to `~/.claude/skills/dotfiles`.
 
 ## Before writing anything
 
