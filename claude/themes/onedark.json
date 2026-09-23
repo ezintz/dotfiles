@@ -4,7 +4,7 @@
   "overrides": {
     "userMessageBackground": "#424854",
     "userMessageBackgroundHover": "#4D5461",
-    "composerSidebarBackground": "#282C34",
+    "composerSidebarBackground": "#21252B",
     "memoryBackgroundColor": "#232B33",
     "bashMessageBackgroundColor": "#1E2227",
     "selectionBg": "#3E4451",
