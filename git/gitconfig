@@ -26,6 +26,14 @@
   path = ~/.gitauthor ; expand "foo" in your `$HOME` directory
   path = ~/.gitconfig.local
 
+[user]
+  ## Fail instead of inventing an identity. Without this, a machine where
+  ## ~/.gitauthor is missing still commits happily, using <user>@<hostname> --
+  ## which publishes the login name and the machine name into a public history
+  ## with no warning at all. This repository carries one such commit, authored
+  ## from a box whose name is now permanent. Erroring out is the whole point.
+  useConfigOnly = true
+
 [init]
   defaultBranch = main
 
