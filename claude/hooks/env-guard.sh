@@ -67,25 +67,64 @@ GUARD_RAW_CMD="$GUARD_CMD"
 # before anything else looks at the command line. Guarded by a glob so the
 # common case pays nothing.
 GUARD_HEREDOC_BODY=''
+GUARD_HEREDOC_CONSUMER=''
 GUARD_HEREDOC_EXPANSIONS=''
+GUARD_HEREDOC_SCRIPTS=''
 case "$GUARD_CMD" in
   *'<<'*)
     GUARD_CMD=$(guard_strip_heredocs "$GUARD_CMD")
-    # Kept for guard_heredoc_shells_out: a body that hands the binary to an
-    # interpreter's exec API is not data, whatever it is being written into.
-    GUARD_HEREDOC_BODY=$(guard_heredoc_bodies "$GUARD_RAW_CMD")
-    # An unquoted delimiter still expands, so the substitutions inside that body
-    # are commands the shell runs before the body is ever written anywhere.
-    GUARD_HEREDOC_EXPANSIONS=$(guard_heredoc_expansions "$GUARD_RAW_CMD") ;;
+    # What a body *is* depends on who consumes it (see guard-lib.sh). Both
+    # execution walks need a consumer that can run something at all, and one
+    # grep answers that for both — see GUARD_HEREDOC_EXEC_RE for why skipping
+    # on a miss is sound.
+    if printf '%s' "$GUARD_RAW_CMD" | grep -qE "$GUARD_HEREDOC_EXEC_RE"; then
+      # A shell or ssh executes the body line by line, so it is classified as a
+      # script and the prompt can name the real target.
+      GUARD_HEREDOC_SCRIPTS=$(guard_heredoc_script_bodies "$GUARD_RAW_CMD")
+      # Another language's interpreter executes it as opaque code; all that can
+      # be spotted there is a call into an exec API (guard_heredoc_shells_out).
+      GUARD_HEREDOC_BODY=$(guard_heredoc_bodies "$GUARD_RAW_CMD" interp)
+      if [ -n "$GUARD_HEREDOC_BODY" ]; then
+        GUARD_HEREDOC_CONSUMER=$(printf '%s' "$GUARD_HEREDOC_BODY" \
+          | sed -n 's/^#guard-src:heredoc into //p' | head -n1)
+      fi
+    fi
+    # An unquoted delimiter still expands whoever the consumer is, so the
+    # substitutions run before the body is written or piped anywhere. A body
+    # with no substitution syntax in it anywhere expands to nothing, and prose
+    # is the usual case.
+    case "$GUARD_RAW_CMD" in
+      *'$('*|*'`'*)
+        GUARD_HEREDOC_EXPANSIONS=$(guard_heredoc_expansions "$GUARD_RAW_CMD")
+        if [ -n "$GUARD_HEREDOC_EXPANSIONS" ]; then
+          GUARD_HEREDOC_EXPANSIONS="#guard-src:heredoc expansion
+$GUARD_HEREDOC_EXPANSIONS"
+        fi ;;
+    esac ;;
 esac
 
-# Segment once for all profiles, and add the contents of any script the command
-# executes, so `bash deploy.sh` is judged on what deploy.sh actually does.
+# Segment once for all profiles, and add everything the command executes without
+# spelling it out inline: script files, make recipes, heredocs a shell runs, and
+# whatever a pipeline feeds into a shell. Each block carries a `#guard-src:`
+# marker so a prompt can say where the segment came from.
 GUARD_ALL_SEGMENTS=$(guard_segments "$GUARD_CMD")
 GUARD_ALL_SEGMENTS="$GUARD_ALL_SEGMENTS
 $GUARD_HEREDOC_EXPANSIONS
+$GUARD_HEREDOC_SCRIPTS
 $(guard_script_bodies "$GUARD_ALL_SEGMENTS")
-$(guard_make_recipes "$GUARD_ALL_SEGMENTS")"
+$(guard_make_recipes "$GUARD_ALL_SEGMENTS")
+$(guard_shell_pipes "$GUARD_RAW_CMD")
+$(guard_inline_scripts "$GUARD_RAW_CMD" "$GUARD_ALL_SEGMENTS")"
+
+# A pipeline feeding a shell from a producer whose output cannot be read is a
+# script that runs before anyone has seen it. Not profile-specific, so it is
+# settled here rather than inside the per-profile loop.
+case "$GUARD_ALL_SEGMENTS" in
+  *'#guard-opaque-pipe '*)
+    GUARD_OPAQUE=$(printf '%s' "$GUARD_ALL_SEGMENTS" \
+      | sed -n 's/^#guard-opaque-pipe //p' | head -n1)
+    guard_ask "\`${GUARD_OPAQUE%% *}\` output is piped into \`${GUARD_OPAQUE##* }\`: the script runs before it can be read. Explicit user confirmation required." ;;
+esac
 
 # guard-lib turns globbing off (untrusted word-splitting); turn it back on just
 # long enough to enumerate the profiles.
@@ -117,6 +156,7 @@ guard_profile_reset() {
   GUARD_REASON_TAIL='Explicit user confirmation required.'
   GUARD_ACTION=''
   GUARD_SEG=''
+  GUARD_SRC=''
   GUARD_HELP_TOKENS='--help|-h|-help'
 }
 
@@ -202,7 +242,7 @@ for guard_profile in "${GUARD_PROFILES[@]}"; do
   if [ -n "$GUARD_HEREDOC_BODY" ]; then
     for guard_b in $GUARD_BINS; do
       guard_heredoc_shells_out "$guard_b" || continue
-      guard_ask "A heredoc body shells out to $guard_b (its target cannot be read from the body). $GUARD_REASON_TAIL"
+      guard_ask "A heredoc body passed to ${GUARD_HEREDOC_CONSUMER:-an interpreter} shells out to $guard_b (its target cannot be read from the body). $GUARD_REASON_TAIL"
     done
   fi
 
@@ -211,8 +251,16 @@ for guard_profile in "${GUARD_PROFILES[@]}"; do
   # first is how `kubectl --context orbstack apply -f a.yml && kubectl --context
   # production apply -f b.yml` gets the production apply approved on the
   # strength of the local one.
+  GUARD_SRC=''
   while IFS= read -r guard_seg; do
     [ -n "$guard_seg" ] || continue
+    # Provenance marker from one of the expanders: everything after it came out
+    # of that script / recipe / heredoc / pipe until the next marker, and the
+    # prompt says so (guard_where).
+    case "$guard_seg" in
+      '#guard-src:'*) GUARD_SRC="${guard_seg#\#guard-src:}"; continue ;;
+      '#guard-opaque-pipe '*) continue ;;
+    esac
     GUARD_SEG="$guard_seg"
 
     for guard_b in $GUARD_BINS; do
@@ -237,10 +285,12 @@ for guard_profile in "${GUARD_PROFILES[@]}"; do
       # benchmark database, the kind cluster. See guard_allowed in guard-lib.sh.
       guard_allowed "$GUARD_BIN" "$GUARD_ACTION" "$guard_target" && continue
 
+      # guard_where is appended centrally so the profiles that override
+      # guard_reason keep their own wording and still name the command.
       if guard_is_fn guard_reason; then
-        guard_ask "$(guard_reason "$guard_target")"
+        guard_ask "$(guard_reason "$guard_target")$(guard_where)"
       else
-        guard_ask "$(guard_default_reason "$guard_target")"
+        guard_ask "$(guard_default_reason "$guard_target")$(guard_where)"
       fi
     done
   done <<EOF

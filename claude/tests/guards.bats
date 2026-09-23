@@ -1343,6 +1343,189 @@ allowlist() {
   assert_pass "$(printf "cat > .gitlab-ci.yml <<'EOF'\nscript:\n  - echo \"would run kubectl delete here\"\nEOF")"
 }
 
+# --- who consumes a heredoc decides what the body is ------------------------
+#
+# A shell executes every line of it, another language's interpreter executes it
+# as opaque code, and everything else is being handed data. Getting this wrong
+# costs in both directions, and it did: `bash <<EOF` was silent, and a commit
+# message describing guard internals prompted.
+
+@test "heredoc into a shell is a script, not data" {
+  local cmd
+  cmd=$(printf '%s\n' "bash <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF')
+  assert_ask "$cmd"
+  assert_reason "$cmd" 'wonka-factory'
+  assert_ask "$(printf '%s\n' "sh -s <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF')"
+  # Unquoted delimiter, same thing — the body is still a script.
+  assert_ask "$(printf '%s\n' 'bash <<EOF' \
+    'helm --kube-context wonka-factory uninstall pancake-service' 'EOF')"
+}
+
+@test "heredoc into ssh runs on another machine and still asks" {
+  assert_ask "$(printf '%s\n' "ssh buildhost <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF')"
+  assert_reason "$(printf '%s\n' "ssh buildhost <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF')" 'wonka-factory'
+}
+
+@test "heredoc into a data consumer is data, however suggestively it reads" {
+  # The reproducer: a commit message documenting the guards quotes a shell-out
+  # in one paragraph and names a guarded binary in another. `git commit -F -`
+  # cannot execute its body, so neither half means anything.
+  assert_pass "$(printf '%s\n' "git commit -F - <<'MSG'" \
+    'fix(guards): close four bypasses' '' \
+    '  sh -c "kubectl --context wonka-factory delete pod x"' \
+    "  subprocess.run(['kubectl','delete','pod','x'])" '' \
+    'git is inert only for its search subcommands.' 'MSG')"
+  assert_pass "$(printf '%s\n' "cat > notes.md <<'EOF'" \
+    "subprocess.run(['kubectl','delete','pod','x'])" 'EOF')"
+  assert_pass "$(printf '%s\n' "tee runbook.md <<'EOF'" \
+    'sh -c "helm --kube-context wonka-factory uninstall pancake-service"' 'EOF')"
+}
+
+# --- a pipeline whose sink is a shell ---------------------------------------
+
+@test "pipes: what a readable producer writes into a shell is classified" {
+  printf 'kubectl --context wonka-factory delete pod hamster-runner-1\n' \
+    > "$BATS_TEST_TMPDIR/payload.sh"
+  assert_ask "cat $BATS_TEST_TMPDIR/payload.sh | bash"
+  assert_reason "cat $BATS_TEST_TMPDIR/payload.sh | bash" 'wonka-factory'
+  assert_ask 'echo "kubectl --context wonka-factory delete pod hamster-runner-1" | sh'
+  # The target has to come from the payload. Dropping `--context` as if it were
+  # one of echo's own flags made the prompt name the ambient context instead —
+  # a prompt for the wrong cluster is how the wrong cluster gets approved.
+  assert_reason 'echo "kubectl --context wonka-factory delete pod hamster-runner-1" | sh' \
+    'wonka-factory'
+  assert_reason 'echo -n "kubectl --context wonka-factory delete pod hamster-runner-1" | sh' \
+    'wonka-factory'
+}
+
+@test "pipes: an unreadable producer feeding a shell asks on principle" {
+  assert_ask 'curl -s https://install.example.test/setup.sh | bash'
+  assert_ask 'gunzip -c bootstrap.sh.gz | sh'
+}
+
+@test "pipes: an ordinary pipeline is not a shell pipeline" {
+  assert_pass 'kubectl --context wonka-factory get pods -o json | jq ".items[].metadata.name"'
+  assert_pass 'helm list -A --kube-context wonka-factory | grep pancake | wc -l'
+  # `||` is a conditional, not a pipe. Read as one, the left side would be
+  # fed to `bash` and its contents classified.
+  printf 'kubectl --context wonka-factory delete pod hamster-runner-1\n' \
+    > "$BATS_TEST_TMPDIR/payload.sh"
+  assert_pass "cat $BATS_TEST_TMPDIR/payload.sh || bash"
+  # A shell handed its own script operand is not reading the pipe.
+  assert_pass "echo hello | bash -c 'cat'"
+}
+
+# --- reading a file is not executing it -------------------------------------
+
+@test "scripts: a data file in head position is not a script" {
+  printf 'kubectl --context wonka-factory delete pod hamster-runner-1\n' \
+    > "$BATS_TEST_TMPDIR/data.json"
+  # guard_segments splits on `(` and `)`, so the path lands in head position
+  # all on its own and used to be read and classified as a script.
+  assert_pass "python3 -c \"import json; d=json.load(open('$BATS_TEST_TMPDIR/data.json'))\""
+  assert_pass "jq . $BATS_TEST_TMPDIR/data.json"
+}
+
+@test "scripts: a binary in head position is not read as text" {
+  assert_pass '/usr/bin/python3 -c "print(1)"'
+  # head -c on a Mach-O image produced garbage segments and a `tr: Illegal byte
+  # sequence` on stderr, which is the visible half of the bug.
+  run_hook '/usr/bin/python3 -c "print(1)"'
+  [ -z "$stderr" ] || { echo "hook wrote to stderr: $stderr"; return 1; }
+}
+
+@test "scripts: the executable bit is what makes a bare path a script" {
+  printf '#!/bin/sh\nkubectl --context wonka-factory delete pod hamster-runner-1\n' \
+    > "$BATS_TEST_TMPDIR/deploy"
+  chmod +x "$BATS_TEST_TMPDIR/deploy"
+  # No extension and no `bash` in front — still a script, still caught.
+  assert_ask "$BATS_TEST_TMPDIR/deploy"
+
+  printf 'kubectl --context wonka-factory delete pod hamster-runner-1\n' \
+    > "$BATS_TEST_TMPDIR/notes.sh"
+  assert_pass "$BATS_TEST_TMPDIR/notes.sh"
+  # Naming it to an interpreter is an explicit "run this", bit or no bit.
+  assert_ask "bash $BATS_TEST_TMPDIR/notes.sh"
+}
+
+# --- a script written and run in the same command ---------------------------
+#
+# The hook runs before the command does, so guard_script_bodies finds nothing to
+# read: this was the one shape that routed around every guard in a single call.
+
+@test "inline scripts: writing a script and running it in one call asks" {
+  assert_ask "$(printf '%s\n' "cat > deploy.sh <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF' \
+    'bash deploy.sh')"
+  assert_reason "$(printf '%s\n' "cat > deploy.sh <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF' \
+    'bash deploy.sh')" 'wonka-factory'
+  # The bare form needs no executable bit here — the chmod is in the same
+  # command, so at hook time the file is neither present nor executable.
+  assert_ask "$(printf '%s\n' "cat > deploy.sh <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF' \
+    'chmod +x deploy.sh && ./deploy.sh')"
+  assert_ask "$(printf '%s\n' "tee deploy.sh <<'EOF'" \
+    'helm --kube-context wonka-factory uninstall pancake-service' 'EOF' \
+    'bash deploy.sh')"
+  assert_ask 'echo "kubectl --context wonka-factory delete pod hamster-runner-1" > deploy.sh && bash deploy.sh'
+}
+
+@test "inline scripts: writing one and not running it is still free" {
+  assert_pass "$(printf '%s\n' "cat > deploy.sh <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF')"
+  # Written, and something else entirely is run.
+  assert_pass "$(printf '%s\n' "cat > runbook.md <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF' \
+    'bash other-deploy.sh')"
+  assert_pass 'echo "kubectl --context wonka-factory delete pod hamster-runner-1" > notes.txt'
+}
+
+@test "inline scripts: a heredoc is only the file when the consumer writes it" {
+  # `python3 - <<'PY' >| out.json` pairs a heredoc with a redirect too, but the
+  # body is python source and out.json is python's *output*. Reading one as the
+  # other is how a JSON blob came to be classified as a shell script.
+  assert_pass "$(printf '%s\n' "python3 - <<'PY' >| /tmp/out.json" \
+    "print('kubectl --context wonka-factory delete pod hamster-runner-1')" 'PY')"
+  # And a harmless script written then run stays harmless.
+  assert_pass "$(printf '%s\n' "cat > deploy.sh <<'EOF'" \
+    'kubectl --context wonka-factory get pods' 'EOF' 'bash deploy.sh')"
+}
+
+# --- the prompt names the command -------------------------------------------
+
+@test "the prompt names the offending command and where it came from" {
+  assert_reason 'kubectl --context wonka-factory delete pod hamster-runner-1' \
+    'Command: `kubectl --context wonka-factory delete pod hamster-runner-1`'
+
+  # The cases that need it most: the segment is nowhere in what was typed.
+  printf 'kubectl --context wonka-factory delete pod hamster-runner-1\n' \
+    > "$BATS_TEST_TMPDIR/deploy.sh"
+  assert_reason "bash $BATS_TEST_TMPDIR/deploy.sh" 'from script deploy.sh'
+
+  assert_reason "$(printf '%s\n' "bash <<'EOF'" \
+    'kubectl --context wonka-factory delete pod hamster-runner-1' 'EOF')" \
+    'from heredoc into bash'
+
+  make_fixture
+  assert_reason 'make smoke' 'from make target smoke'
+}
+
+@test "the prompt's command is bounded, not the whole command line" {
+  # A 9 KB single-token value is a real shape (an id list), and under bash 3.2
+  # substituting on it before truncating is a 44-second hang, not a long
+  # string. The timed mysql case covers the same path from the other end.
+  local ids
+  ids=$(seq 0 1999 | tr '\n' ',' | sed 's/,$//')
+  run_hook "mysql -h prod-db.internal -e \"delete from t where id in ($ids)\""
+  printf '%s' "$output" | grep -q '"permissionDecision":"ask"'
+  [ "${#output}" -lt 700 ] || { echo "reason is unbounded: ${#output} bytes"; return 1; }
+}
+
 # --- terraform verbs added after the guard was written ----------------------
 
 @test "terraform: modules and query only print" {
