@@ -1,387 +1,166 @@
-#!/usr/bin/env zsh
+#!/bin/sh
+#
+# Sync this repository, install packages, link the config into $HOME and apply
+# the macOS defaults. Safe to re-run.
+#
+# POSIX sh on purpose: it is the one shell present on a fresh Mac *and* on a
+# Debian or Alpine server, where zsh (which this used to be written in) is not.
+# A machine without the checkout yet starts from install.sh instead.
 
-## Ensure colors are available.
-autoload -U colors && colors
+usage() {
+  cat <<'EOF'
+Usage: dotfiles [options]
 
-## Path where the dotfiles will be placed.
-DOTFILES_DIRECTORY="${HOME}/.dotfiles"
-
-## Git remote repository
-DOTFILES_GIT_REMOTE="https://github.com/ezintz/dotfiles.git"
-
-## Optional private overlay directory (can be a separate private git repo).
-DOTFILES_LOCAL_DIRECTORY="${HOME}/.dotfiles-private"
-
-## Homebrew formulae
-DESIRED_HOMEBREW_FORMULAE=(
-  'ack'
-  'bat'
-  'bats-core'
-  'coreutils'
-  'curl'
-  'duti'
-  'fortune'
-  'jq'
-  'git'
-  'git-extras'
-  'helm'
-  'kubernetes-cli'
-  'node'
-  'reattach-to-user-namespace'
-  'opentofu'
-  'tmux'
-  'uv'
-  'wireguard-tools'
-  'wget'
-)
-
-DESIRED_HOMEBREW_CASK_FORMULAE=(
-  '1password'
-  '1password-cli'
-  'dropbox'
-  'google-chrome'
-  'google-drive'
-  'krisp'
-  'microsoft-edge'
-  'orbstack'
-  'sequel-ace'
-  'slack'
-  'stats'
-  'visual-studio-code'
-  'jetbrains-toolbox'
-  'font-jetbrains-mono-nerd-font'
-)
-
-
-if [[ ! -d ${DOTFILES_DIRECTORY} ]]; then
-  git clone --recursive ${DOTFILES_GIT_REMOTE} ${DOTFILES_DIRECTORY}
-fi
-
-## Change directory to our dotfiles.
-cd ${DOTFILES_DIRECTORY}
-
-## Load helpers
-source ${DOTFILES_DIRECTORY}/bin/_helpers
-
-## Create symbolic links in home directory.
-## $1 - Source file
-## $2 - Target file
-function link {
-  if [[ -L "${HOME}/${2}" ]]; then
-    return
-  fi
-
-  if [[ -f "${HOME}/${2}" ]]; then
-    echo "File '${HOME}/${2}' exists, creating a backup as '${HOME}/${2}_backup'"
-    cp "${HOME}/${2}" "${HOME}/${2}_backup"
-fi
-
-  ln -fs "${DOTFILES_DIRECTORY}/${1}" "${HOME}/${2}"
+  -np, --no-packages       do not install or update packages
+  -ns, --no-sync           do not pull this repository or its submodules
+  -nl, --no-links          do not create symlinks or ask for the Git identity
+  -nc, --no-configuration  do not apply the macOS defaults (bin/_macos)
+  -y,  --yes               answer yes to every question except "restart now?"
+       --dry-run           print what would change, change nothing
+  -h,  --help              show this help
+EOF
 }
 
-## Merge tracked JSON settings into an existing file using jq, adding or
-## replacing only the keys defined in the source while preserving any other
-## keys already present in the destination (e.g. machine-specific permissions,
-## model, plugins). Falls back to a plain copy when the destination is absent.
-## $1 - Source file (relative to DOTFILES_DIRECTORY)
-## $2 - Target file (relative to HOME)
-function merge_json {
-  local src="${DOTFILES_DIRECTORY}/${1}"
-  local dest="${HOME}/${2}"
+## Everything runs from inside main, which the shell has to parse completely
+## before running any of it. That matters because the sync step can rewrite this
+## very file, and sh otherwise reads a script as it executes it.
+main() {
+  DOTFILES_DIRECTORY=$(cd "$(dirname "$0")/.." && pwd -P)
+  DOTFILES_LOCAL_DIRECTORY="${HOME}/.dotfiles-private"
+  export DOTFILES_DIRECTORY DOTFILES_LOCAL_DIRECTORY
 
-  if ! command -v jq >/dev/null 2>&1; then
-    echo "jq not found; skipping JSON merge for '${2}' (install jq to manage it)"
-    return
+  . "${DOTFILES_DIRECTORY}/bin/lib/ui.sh"
+  . "${DOTFILES_DIRECTORY}/bin/lib/links.sh"
+  . "${DOTFILES_DIRECTORY}/bin/lib/claude.sh"
+  . "${DOTFILES_DIRECTORY}/bin/lib/packages.sh"
+
+  no_packages=; no_sync=; no_links=; no_configuration=
+  for opt in "$@"; do
+    case "$opt" in
+      -np|--no-packages) no_packages=1 ;;
+      -ns|--no-sync) no_sync=1 ;;
+      -nl|--no-links) no_links=1 ;;
+      -nc|--no-configuration) no_configuration=1 ;;
+      -y|--yes) DOTFILES_YES=1 ;;
+      --dry-run) DOTFILES_DRY_RUN=1 ;;
+      -h|--help) usage; exit 0 ;;
+      *) print_warning "Invalid option $opt"; usage; exit 2 ;;
+    esac
+  done
+  export DOTFILES_YES="${DOTFILES_YES:-}" DOTFILES_DRY_RUN="${DOTFILES_DRY_RUN:-}"
+  [ -n "$DOTFILES_DRY_RUN" ] && print_notice "Dry run: nothing will be changed."
+
+  ## prezto's runcoms, tmux.conf and the Claude session hooks all name
+  ## ~/.dotfiles, so a checkout anywhere else links config that points nowhere.
+  if [ "$DOTFILES_DIRECTORY" != "$(cd "${HOME}/.dotfiles" 2>/dev/null && pwd -P)" ]; then
+    print_warning "This checkout is not at ~/.dotfiles, which the shell and tmux config expect."
   fi
 
-  mkdir -p "$(dirname "${dest}")"
-
-  ## No existing settings — just seed with the tracked defaults.
-  if [[ ! -e "${dest}" ]]; then
-    cp "${src}" "${dest}"
-    return
+  if is_macos && ! xcode-select -p >/dev/null 2>&1; then
+    abort "The Xcode Command Line Tools are missing. Run install.sh, or 'xcode-select --install' and re-run."
   fi
 
-  ## Deep-merge tracked keys into the existing file (tracked values win),
-  ## reading through the destination even if it is a symlink from an older setup.
-  local tmp
-  tmp="$(mktemp)"
-  if jq -s '.[0] * .[1]' "${dest}" "${src}" >| "${tmp}" 2>/dev/null; then
-    rm -f "${dest}"   ## drop any pre-existing symlink so we write a real file
-    mv "${tmp}" "${dest}"
+  if [ -n "$no_sync" ]; then
+    print_notice "Skipped dotfiles synchronization."
   else
-    echo "Failed to merge JSON for '${2}'; leaving existing file untouched"
-    rm -f "${tmp}"
+    sync_repositories "$@"
   fi
-}
 
-function mirror_local_files {
-  [[ -d "${DOTFILES_LOCAL_DIRECTORY}" ]] || return
+  if [ -n "$no_packages" ]; then
+    print_notice "Skipped installation of packages."
+  else
+    install_packages
+  fi
 
-  local known_links=(
-    "gitconfig.local:.gitconfig.local"
-    "zpreztorc.local:.zpreztorc.local"
-    "tmux.conf.local:.tmux.conf.local"
-    "zprofile.local:.zprofile.local"
-  )
-
-  for entry in $known_links; do
-    local src="${entry%%:*}"
-    local dest="${entry##*:}"
-    if [[ -f "${DOTFILES_LOCAL_DIRECTORY}/${src}" ]]; then
-      ln -fs "${DOTFILES_LOCAL_DIRECTORY}/${src}" "${HOME}/${dest}"
+  if [ -n "$no_links" ]; then
+    print_notice "Skipped mirroring dotfiles."
+  else
+    print_header "Setting up dotfiles"
+    if confirm "Link the dotfiles into ${HOME}? Existing files are moved aside, not deleted."; then
+      mirror_files
+      mirror_local_files
+      setup_claude
+      print_success "... done!"
+    else
+      print_notice "Skipped mirroring dotfiles."
     fi
-  done
-}
-
-## Link Claude Code skills into ~/.claude/skills, which Claude scans one level
-## deep for <name>/SKILL.md. Skills come from three tiers:
-##   1. tracked   ${DOTFILES_DIRECTORY}/claude/skills   -> public, pushed to GitHub
-##   2. private   ${DOTFILES_LOCAL_DIRECTORY}/claude/skills -> private overlay repo
-##   3. local     plain directories in ~/.claude/skills  -> this machine only
-## Only tiers 1 and 2 are linked; a real directory always wins over a link so a
-## machine-local skill is never clobbered by a tracked one of the same name.
-function mirror_skills {
-  local skills_dir="${HOME}/.claude/skills"
-  mkdir -p "${skills_dir}"
-
-  ## Prune dangling links left behind by skills renamed or removed upstream.
-  local existing
-  for existing in "${skills_dir}"/*(@N); do
-    [[ -e "${existing}" ]] || rm -f "${existing}"
-  done
-
-  local source_dir skill name
-  for source_dir in \
-    "${DOTFILES_DIRECTORY}/claude/skills" \
-    "${DOTFILES_LOCAL_DIRECTORY}/claude/skills"
-  do
-    [[ -d "${source_dir}" ]] || continue
-
-    for skill in "${source_dir}"/*(/N); do
-      name="${skill:t}"
-
-      if [[ -d "${skills_dir}/${name}" && ! -L "${skills_dir}/${name}" ]]; then
-        print_warning "Skill '${name}' exists as a local directory; not linking ${skill}"
-        continue
-      fi
-
-      ln -fsn "${skill}" "${skills_dir}/${name}"
-    done
-  done
-}
-
-function mirror_files {
-  ## ensure ssh control path directory exists
-  mkdir -p ~/.ssh/control/
-
-  link "curlrc" ".curlrc"
-  link "wgetrc" ".wgetrc"
-
-  link "ssh/config" ".ssh/config"
-  link "ssh/config.d" ".ssh"
-
-  link "git/gitignore" ".gitignore"
-  link "git/gitattributes" ".gitattributes"
-  link "git/gitconfig" ".gitconfig"
-
-  link "prezto/runcoms/zlogin" ".zlogin"
-  link "prezto/runcoms/zlogout" ".zlogout"
-  link "prezto/runcoms/zprofile" ".zprofile"
-  link "prezto/runcoms/zpreztorc" ".zpreztorc"
-  link "prezto/runcoms/zshenv" ".zshenv"
-
-  link "tmux/tmux.conf" ".tmux.conf"
-  mkdir -p "${HOME}/.tmux"
-  link "tmux/plugins" ".tmux/plugins"
-
-  ## cmux embeds libghostty and exposes no cursor/font settings of its own, so
-  ## this file is cmux's terminal config as much as Ghostty's. Linked per-file,
-  ## not as a directory: `link` does a bare `ln -fs`, which would drop a symlink
-  ## *inside* an existing ~/.config/ghostty instead of replacing it.
-  mkdir -p "${HOME}/.config/ghostty"
-  link "ghostty/config" ".config/ghostty/config"
-  link "ghostty/passthrough.glsl" ".config/ghostty/passthrough.glsl"
-  mkdir -p "${HOME}/.config/cmux"
-  link "cmux/cmux.json" ".config/cmux/cmux.json"
-  ## login(1) prints "Last login: …" before the shell starts. In cmux that line
-  ## is drawn and then replaced by the tmux screen tmux/cmux.zsh attaches, so
-  ## every new tab visibly loads twice. The file's existence alone silences it.
-  touch "${HOME}/.hushlogin"
-
-  mkdir -p "${HOME}/.claude/hooks"
-  ## Named differently from the symlink target so Claude Code's in-repo
-  ## CLAUDE.md auto-discovery doesn't also load it a second time as a
-  ## project file when working inside this repo.
-  link "claude/global-instructions.md" ".claude/CLAUDE.md"
-  link "claude/statusline-command.sh" ".claude/statusline-command.sh"
-
-  ## Drop links left behind by the pre-dispatcher one-hook-per-tool layout, so
-  ## a stale settings.json entry can't point at a script that no longer exists.
-  local stale
-  for stale in "${HOME}"/.claude/hooks/*(@N); do
-    [[ -e "${stale}" ]] || rm -f "${stale}"
-  done
-
-  ## env-guard.sh is the only registered hook; it sources guard-lib.sh and every
-  ## guards/*.guard profile, so both have to be linked or it guards nothing.
-  ## guards/ is linked as a whole directory (unlike skills/rules, nothing else
-  ## writes into it), which is what makes adding a tool a single new file.
-  link "claude/hooks/guard-lib.sh" ".claude/hooks/guard-lib.sh"
-  link "claude/hooks/env-guard.sh" ".claude/hooks/env-guard.sh"
-  link "claude/hooks/guards" ".claude/hooks/guards"
-  merge_json "claude/settings.json" ".claude/settings.json"
-  ## User-scope MCP servers live in ~/.claude.json (top-level mcpServers).
-  ## Deep-merge the tracked set in, preserving Claude's own state in that file.
-  ## Secrets are referenced as ${VAR} and exported from ~/.zprofile.local.
-  merge_json "claude/mcp.json" ".claude.json"
-  mirror_skills
-
-  ## ~/.claude/skills and ~/.claude/rules can already hold plugin-managed
-  ## entries (e.g. context7-mcp, context7.md), so link individual entries
-  ## rather than the whole directory to avoid clobbering those.
-  mkdir -p "${HOME}/.claude/skills"
-  for skill_dir in "${DOTFILES_DIRECTORY}"/claude/skills/*(N/); do
-    local skill_name="$(basename "${skill_dir}")"
-    link "claude/skills/${skill_name}" ".claude/skills/${skill_name}"
-  done
-
-  mkdir -p "${HOME}/.claude/agents"
-  for agent_file in "${DOTFILES_DIRECTORY}"/claude/agents/*.md(N); do
-    local agent_name="$(basename "${agent_file}")"
-    link "claude/agents/${agent_name}" ".claude/agents/${agent_name}"
-  done
-
-  mkdir -p "${HOME}/.claude/rules"
-  for rule_file in "${DOTFILES_DIRECTORY}"/claude/rules/*.md(N); do
-    local rule_name="$(basename "${rule_file}")"
-    link "claude/rules/${rule_name}" ".claude/rules/${rule_name}"
-  done
-
-  mkdir -p "${HOME}/.claude/refs"
-  for ref_file in "${DOTFILES_DIRECTORY}"/claude/refs/*.md(N); do
-    local ref_name="$(basename "${ref_file}")"
-    link "claude/refs/${ref_name}" ".claude/refs/${ref_name}"
-  done
-
-  ## Claude Code's `/theme` editor rewrites a theme by renaming a temp file over
-  ## it, which replaces the symlink with a regular file -- so a theme tweaked in
-  ## the UI detaches from this repo until the next run re-links it.
-  mkdir -p "${HOME}/.claude/themes"
-  for theme_file in "${DOTFILES_DIRECTORY}"/claude/themes/*.json(N); do
-    local theme_name="$(basename "${theme_file}")"
-    link "claude/themes/${theme_name}" ".claude/themes/${theme_name}"
-  done
-
-  ## Do not create a link for the `.zshrc` since it might contain local configuration.
-  if [[ ! -e $HOME/.zshrc ]]; then
-    link "prezto/runcoms/zshrc" ".zshrc"
-  fi
-}
-
-## Test for known flags.
-for opt in $@
-do
-  case $opt in
-    -nc|--no-configuration) no_configuration=true ;;
-    -np|--no-packages) no_packages=true ;;
-    -ns|--no-sync) no_sync=true ;;
-    -nl|--no-links) no_links=true ;;
-    -*|--*) print_warning "Invalid option $opt" ;;
-  esac
-done
-
-## If the host is running MacOS.
-if is_macos; then
-  ## Before relying on Homebrew, check that packages can be compiled.
-  if ! type_exists 'gcc'; then
-    abort "The XCode Command Line Tools must be installed first. Download them from https://developer.apple.com/downloads" 1
+    ## ~/.gitauthor is the identity the linked gitconfig includes, so it belongs
+    ## with the links rather than with the macOS defaults.
+    setup_git
   fi
 
-  ## Check for Homebrew
-  if ! type_exists 'brew'; then
-    print_header "Installing Homebrew ..."
-    seek_confirmation "Do you want to install homebrew now?"
-    if is_confirmed; then
-      print_notice "Downloading Homebrew ..."
-      /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+  if [ -n "$no_configuration" ]; then
+    print_notice "Skipped macOS settings update."
+  elif is_macos; then
+    print_header "macOS settings update"
+    if confirm "Apply the macOS defaults in bin/_macos? This overwrites the matching system settings."; then
+      run sh "${DOTFILES_DIRECTORY}/bin/_macos"
+      print_success "... done!"
+    else
+      print_notice "Skipped macOS settings update."
     fi
-    abort "Homebrew must be installed. For more information visit the website: http://mxcl.github.io/homebrew" 1
   fi
-fi
+}
 
-## Source local package additions if private overlay exists.
-if [[ -f "${DOTFILES_LOCAL_DIRECTORY}/packages.zsh" ]]; then
-  source "${DOTFILES_LOCAL_DIRECTORY}/packages.zsh"
-fi
-
-## Install or update packages.
-if [ $no_packages ]; then
-  print_notice "Skipped installation of additional packages."
-else
-  ## Installing Homebrew formulae only on hosts that are running MacOS.
-  if is_macos; then;
-    install_brew_formulae
-    install_brew_cask_formulae
+sync_repositories() {
+  if [ ! -d "${DOTFILES_DIRECTORY}/.git" ]; then
+    print_notice "Not a git checkout (installed from a tarball); skipped synchronization."
+    return 0
   fi
-
-  ## Install node.js packages.
-  install_npm_packages
-
-  ## Install tmux plugins managed by TPM.
-  #install_tmux_plugins
-fi
-
-## Conditionally sync with the remote repository.
-if [ $no_sync ]; then
-  print_notice "Skipped dotfiles synchronization."
-else
   print_notice "Syncing dotfiles ..."
-  ## Pull down the latest changes.
-  git pull --rebase origin main
-  ## Sync submodules.
-  git submodule sync --recursive
-  ## Only the plugin: a blanket `update` would detach prezto from its branch
-  ## whenever it carries commits the superproject has not recorded yet.
-  git submodule update --init tmux/plugins/tmux-resurrect
-  ## Pull private overlay if it exists as a git repo.
-  if [[ -d "${DOTFILES_LOCAL_DIRECTORY}/.git" ]]; then
+  _before=$(git -C "$DOTFILES_DIRECTORY" rev-parse HEAD)
+  run git -C "$DOTFILES_DIRECTORY" pull --rebase --autostash ||
+    print_warning "git pull failed; continuing with the current checkout"
+  run git -C "$DOTFILES_DIRECTORY" submodule sync --recursive
+  ## Only initialise prezto, never update it: a blanket `update` would detach
+  ## prezto from its branch whenever it carries commits the superproject has
+  ## not recorded yet.
+  if [ ! -e "${DOTFILES_DIRECTORY}/prezto/.git" ]; then
+    run git -C "$DOTFILES_DIRECTORY" submodule update --init --recursive prezto
+  fi
+  run git -C "$DOTFILES_DIRECTORY" submodule update --init tmux/plugins/tmux-resurrect
+  if [ -d "${DOTFILES_LOCAL_DIRECTORY}/.git" ]; then
     print_notice "Syncing private dotfiles overlay ..."
-    git -C "${DOTFILES_LOCAL_DIRECTORY}" pull --rebase
+    run git -C "$DOTFILES_LOCAL_DIRECTORY" pull --rebase ||
+      print_warning "git pull failed for ${DOTFILES_LOCAL_DIRECTORY}"
   fi
   print_success "... done!"
-fi
 
-if [ $no_links ]; then
-  print_notice "Skipped mirroring dotfiles."
-else
-  print_header "Setting up dotfiles"
-  seek_confirmation "This step may overwrite existing dotfiles."
-  if is_confirmed; then
-    print_notice "Mirroring dotfiles ..."
-    mirror_files
-    mirror_local_files
+  ## A pull that changed this script or its libraries must not run the rest of
+  ## the old version: start over on the new one, without syncing again.
+  if [ "$_before" != "$(git -C "$DOTFILES_DIRECTORY" rev-parse HEAD)" ]; then
+    print_notice "Updated; restarting with the new version ..."
+    exec sh "${DOTFILES_DIRECTORY}/bin/dotfiles" --no-sync "$@"
+  fi
+}
+
+setup_git() {
+  has git || return 0
+  [ -n "$(git config --file "${HOME}/.gitauthor" user.name 2>/dev/null)" ] && return 0
+  [ -n "${DOTFILES_DRY_RUN:-}" ] && { print_notice "Would ask for the Git identity (~/.gitauthor)."; return 0; }
+
+  print_header "Setting up Git identity ..."
+  ## A subshell, not { …; }: in dash and busybox a failed redirection on the
+  ## special builtin `:` exits the whole script, and there is no terminal in a
+  ## container or under `curl | sh` without one.
+  if ! (: < /dev/tty) 2>/dev/null; then
+    print_warning "No terminal to ask on. Set it later: git config --file ~/.gitauthor user.name 'Your Name' (and user.email)"
+    return 0
+  fi
+  _username=; _email=
+  while [ -z "$(printf '%s' "$_username" | tr -d '[:space:]')" ]; do
+    printf 'Your name (e.g. Walter White): '; read -r _username < /dev/tty || return 0
+  done
+  while [ -z "$(printf '%s' "$_email" | tr -d '[:space:]')" ]; do
+    printf 'Your e-mail address: '; read -r _email < /dev/tty || return 0
+  done
+  if ask "Configure Git with \"${_username}\" <${_email}>?"; then
+    git config --file "${HOME}/.gitauthor" user.name "$_username"
+    git config --file "${HOME}/.gitauthor" user.email "$_email"
     print_success "... done!"
   else
-    print_notice "Skipped mirroring dotfiles."
+    print_warning "Git identity not set. See https://git-scm.com/book/en/v2/Getting-Started-First-Time-Git-Setup"
   fi
+}
 
-  ## ~/.gitauthor is the identity the linked gitconfig includes, so it belongs
-  ## with the links rather than with the macOS defaults.
-  setup_git
-fi
-
-if [ $no_configuration ]; then
-  print_notice "Skipped OS X settings update."
-elif is_macos; then
-  print_header "OS X settings update"
-  seek_confirmation "Warning: This step may overwrite your OS X settings."
-  if is_confirmed; then
-    print_notice "Updating settings ..."
-    source bin/_macos
-    print_success "... done!"
-    print_notice "Note that some of these changes require a logout/restart to take effect."
-  else
-    print_notice "Skipped OS X settings update."
-  fi
-fi
+main "$@"

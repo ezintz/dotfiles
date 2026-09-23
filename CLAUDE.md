@@ -4,31 +4,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-A macOS dotfiles repository that manages shell configuration (Zsh/Prezto), Git, SSH, Tmux, and system defaults. The main mechanism is symlinking files from this repo into `~`.
+A macOS-first dotfiles repository (the installer also runs on Linux servers) that manages shell configuration (Zsh/Prezto), Git, SSH, Tmux, macOS defaults and a Claude Code plugin. The main mechanism is symlinking files from this repo into `~`.
 
 ## Installation & Usage
 
 ```bash
-# Initial install or re-run after changes
-bin/dotfiles
+# Fresh machine (Mac or server): gets the CLT/Homebrew or git it needs first
+curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/install.sh | sh
 
-# Skip specific phases
-bin/dotfiles --no-packages       # skip Homebrew/npm installs
+# Re-run after changes
+bin/dotfiles
+bin/dotfiles --no-packages       # skip Brewfile / Linux packages
 bin/dotfiles --no-sync           # skip git pull
 bin/dotfiles --no-links          # skip symlinks and the git identity prompt
 bin/dotfiles --no-configuration  # skip macOS defaults
+bin/dotfiles --yes               # answer every prompt except "restart now?"
+bin/dotfiles --dry-run           # print what would change
 ```
 
 After setup, `bin/` is in PATH (via `zprofile`), so `dotfiles` works as a command from anywhere.
 
-There is no linting. The one test suite is `claude/tests/guards.bats`, which pins
+`install.sh`, `bin/dotfiles`, `bin/lib/*.sh` and `bin/_macos` are **POSIX sh**, because that is the only shell on both a fresh Mac and a Debian/Alpine server — zsh, which `bin/dotfiles` used to be written in, is absent from the latter. Two traps only show under dash/busybox, never under macOS `sh` (which is bash), so a Mac-only test passes them: `&>` backgrounds the command instead of redirecting it, and a failed redirection on a *special* builtin (`:`, `.`, `exec`, …) exits the whole script. Check changes with
+
+```bash
+uv run --with shellcheck-py shellcheck -s sh -x -P bin/lib install.sh bin/dotfiles bin/lib/*.sh bin/_macos
+```
+
+and exercise the Linux path in a container: copy the checkout to `/root/.dotfiles` in `debian:stable-slim` and `alpine` and run `sh /root/.dotfiles/install.sh --yes --no-sync`.
+
+The one test suite is `claude/plugin/tests/guards.bats`, which pins
 the behaviour of the Claude Code env guards:
 
 ```bash
-bats claude/tests/guards.bats   # bats-core is in DESIRED_HOMEBREW_FORMULAE
+bats claude/plugin/tests/guards.bats   # bats-core is in the Brewfile
 ```
 
-Run it after any change under `claude/hooks/`.
+Run it after any change under `claude/plugin/hooks/`.
 
 Most cases are behavioural (this command passes, that one asks). The last three
 are different: they scrape `kubectl`/`helm`/`tofu --help` for the tool's real
@@ -53,7 +64,9 @@ Keep them working rather than deleting them when they go red.
 
 Editing files in this repo immediately affects the live configuration.
 
-An optional private overlay directory, `~/.dotfiles-private` (a separate, non-tracked repo), can hold `gitconfig.local`, `zpreztorc.local`, `tmux.conf.local`, and `zprofile.local`. If present, `bin/dotfiles` symlinks them into `~` alongside the tracked config (`mirror_local_files` in `bin/dotfiles`).
+The checkout must live at `~/.dotfiles`: the prezto runcoms, `tmux.conf` and the Claude session hooks all name that path, so `install.sh` lets a fork override the remote but not the location.
+
+An optional private overlay directory, `~/.dotfiles-private` (a separate, non-tracked repo), can hold `gitconfig.local`, `zpreztorc.local`, `tmux.conf.local`, `zprofile.local` and `zshrc.local` (symlinked into `~` by `mirror_local_files`), a `Brewfile` (installed after the tracked one), `claude/settings.json` (merged after the tracked one) and `claude/skills/<name>/` (linked one by one into `~/.claude/skills`).
 
 ### Shell Configuration (Prezto)
 
@@ -70,7 +83,7 @@ An optional private overlay directory, `~/.dotfiles-private` (a separate, non-tr
 
 ### macOS System Defaults
 
-`bin/_macos` is a standalone script (~850 lines) that sets macOS defaults for Dock, Finder, Safari, etc. It's sourced by `bin/dotfiles` during the configuration phase.
+`bin/_macos` is a standalone script (~850 lines) that sets macOS defaults for Dock, Finder, Safari, etc. `bin/dotfiles` runs it as `sh bin/_macos` in its own process, never sources it, so it is POSIX sh like the rest.
 
 ### Git Submodules
 
@@ -81,10 +94,13 @@ After cloning, run `git submodule update --init --recursive`.
 
 ### Claude Code Configuration (`claude/`)
 
-`claude/` manages the *global* (`~/.claude/`) Claude Code setup, not project-local config:
-- `bootstrap.sh` — standalone installer for machines without this repo cloned (`curl -fsSL .../claude/bootstrap.sh | sh`); installs global instructions plus the env-guard hook and registers it in `~/.claude/settings.json`. Safe to re-run. It fetches over HTTP and so cannot glob a remote directory or read the repo: its `PROFILES` list must be updated by hand when a guard profile is added, and its `ask_rules` list when a wrapper is added to `settings.json`. Both merges are additive — a hook, plugin or ask rule the user added by hand is never dropped.
+`claude/` manages the *global* (`~/.claude/`) Claude Code setup, not project-local config. Most of it is a standard Claude Code **plugin**, `claude/plugin/` (name `dotfiles`, listed by the `ezintz` marketplace in `.claude-plugin/marketplace.json` at the repo root): the env-guard hook, skills, agents and refs. Plugin skills are namespaced, so `debugging` is `/dotfiles:debugging`. A plugin cannot ship rules, a CLAUDE.md, permissions, env, a statusline or arbitrary settings, so those stay directly in `claude/` and are linked or merged by `bin/lib/claude.sh`.
+
+**How the plugin is loaded differs by machine, on purpose.** With this checkout, `bin/dotfiles` links `claude/plugin` to `~/.claude/skills/dotfiles`, where Claude Code loads it *in place* as `dotfiles@skills-dir` — edits are live next session. Installing from the marketplace instead **copies** it into `~/.claude/plugins/cache/`, even from a local-directory marketplace (verified), so never enable `dotfiles@ezintz` on a machine that has the checkout: every skill would load twice and the guard would run twice. Bump `version` in `claude/plugin/.claude-plugin/plugin.json` when the plugin changes: marketplace users receive an update only when it moves. Check both manifests with `claude plugin validate ./claude/plugin --strict` and `claude plugin validate . --strict`, and `claude plugin details dotfiles@skills-dir` shows what actually loaded. The plugin can later move to its own repository with `git subtree split --prefix claude/plugin`, which is why its tests live inside it.
+
+- `bootstrap.sh` — standalone installer for machines without this repo cloned (`curl -fsSL .../claude/bootstrap.sh | sh`): installs the plugin from the marketplace, fetches the global instructions, rules and the refs they name, and merges the marketplace, `enabledPlugins` and `make` ask rules into `~/.claude/settings.json` with jq. Safe to re-run. It fetches over HTTP and so cannot glob a remote directory or read the repo: its `RULES`/`REFS` lists must be updated by hand when a rule is added, and its ask rules when a wrapper is added to `settings.json`. The merge is additive — a hook, plugin or ask rule the user added by hand is never dropped.
 - `global-instructions.md` → symlinked to `~/.claude/CLAUDE.md`. It is named differently in-repo on purpose, so Claude Code's auto-discovery doesn't also load it a second time as a project file when working inside this dotfiles repo. **It costs context in every session of every repo**, so it holds only things that change how Claude behaves *anywhere* — command discipline, tool usage. How something here is built, tested or extended is maintenance knowledge and belongs in this file instead; it is loaded automatically whenever the work is actually happening in this repo. When in doubt: would this help in an unrelated repo six months from now? If not, it goes here.
-- `hooks/` — the PreToolUse env guard: destructive commands aimed at a non-local target get `permissionDecision: "ask"` instead of running under the ambient permission mode.
+- `plugin/hooks/` — the PreToolUse env guard, registered by the plugin's `hooks/hooks.json` as `/bin/bash "${CLAUDE_PLUGIN_ROOT}/hooks/env-guard.sh"` (explicit `/bin/bash`, so it neither depends on the exec bit surviving install nor picks up a newer bash): destructive commands aimed at a non-local target get `permissionDecision: "ask"` instead of running under the ambient permission mode.
   - `env-guard.sh` is the **only** registered `PreToolUse` hook. (`SessionStart`/`SessionEnd` run `tmux/claude-session.sh`, which has nothing to do with guarding — see Terminals.) It reads the tool JSON once and dispatches to every profile in `hooks/guards/*.guard`. One process per Bash call instead of one per guarded tool (~13ms vs ~141ms when nothing matches).
   - `guard-lib.sh` holds the command-line parsing — segmentation, wrapper/`eval` detection, exact-token subcommand matching, flag-value skipping. This is the part that keeps `helm template test chart` from reading as `helm test`.
   - **Writing ≠ executing.** Heredoc bodies are stripped before classification (`guard_strip_heredocs`), so `cat > runbook.md <<EOF … kubectl --context production delete … EOF` documents a command without prompting. The line that *opens* the heredoc is kept, because `kubectl apply -f - <<EOF` really does apply. Three things survive the strip, because they are execution and not writing. **Who consumes the body decides what it is**: `bash <<'EOF'` and `ssh host <<'EOF'` are scripts arriving on stdin, not documents, so `guard_heredoc_script_bodies` classifies them like a script file and the prompt names the real target — stripping them as data made both completely silent. `GUARD_HEREDOC_SHELL_HEADS` is the consumer list; `GUARD_HEREDOC_TRANSPORTS` (docker, podman, nerdctl, lima, colima, kubectl) are transport rather than consumers, since `docker exec -i box bash <<EOF` runs the body in a shell named later on the line. A data consumer (`cat`, `tee`, `git commit -F -`) leaves it data however suggestively it reads. Then, with an **unquoted** delimiter the shell still expands the body, so `guard_heredoc_expansions` pulls each `$( )`/backtick substitution back out as its own segment — it classifies with a real resolved target, and prose in the body is untouched because prose is not a substitution. And any body, quoted or not, that hands a guarded binary to an interpreter's exec API (`subprocess`, `os.system`, `system(`, `sh -c`, …) asks via `guard_heredoc_shells_out`: the body is opaque, so the prompt names the binary rather than a target it cannot read. Naming a binary in data (`name: kubectl-helper`) trips none of the three, since it is neither a substitution nor an exec call and `cat`/`tee` is not a consumer that runs anything. Note the pre-filter haystack in `env-guard.sh` includes the stripped body for exactly this reason — filter on the segments alone and the shell-out net is never reached. Conversely `guard_script_bodies` reads the contents of scripts the command executes (`bash deploy.sh`, `./deploy.sh`, `source x.sh`) — one level deep, bounded to 4 files × 64 KiB — so a destructive command is caught when it runs from a file, not when it is written to one. `guard_make_recipes` does the same for `make <target>`: it reads the target's recipe out of the Makefile and classifies *that*, so `make test` that deletes a namespace asks and `make deploy` that only rsyncs does not. Bounded to 4 targets, one level deep, with no variable expansion — a recipe of `$(KUBECTL) delete` is not seen, which is what the `make` entries in `settings.json` `permissions.ask` back up.
@@ -136,9 +152,9 @@ below exists because breaking it produced a real bug in this repo.
    profiles and let their read-only halves through. `make` is the exception — a
    target name says nothing about what it runs — so it stays a name-based
    `permissions.ask` rule, backing up the recipe expansion in `guard_make_recipes`.
-6. **Add test cases in both directions** to `claude/tests/guards.bats` — the
+6. **Add test cases in both directions** to `claude/plugin/tests/guards.bats` — the
    read-only command that must pass *and* the mutation that must still ask — and
-   run `bats claude/tests/guards.bats`. Use fictional cluster/release/host names,
+   run `bats claude/plugin/tests/guards.bats`. Use fictional cluster/release/host names,
    never real ones.
    For a test that pins a *fix*, break the fix and watch the test fail before
    trusting it. Two of these passed against reverted code here: one because the
@@ -148,25 +164,25 @@ below exists because breaking it produced a real bug in this repo.
    to be pinned on the *target resolution* picking the wrong context instead. A
    green suite proves nothing about a bug it never actually reproduced.
    Anything resolved by asking a real binary (kube context, docker endpoint, TF
-   workspace) needs a stub in `claude/tests/stubs/` — and the stub must be
+   workspace) needs a stub in `claude/plugin/tests/stubs/` — and the stub must be
    `chmod +x`, or `command -v` silently falls through to the real tool and the
    case passes on whatever this machine happens to be configured with.
-7. **Adding a tool is one new `.guard` file**, plus its filename in `bootstrap.sh`'s
-   `PROFILES` list. `bin/dotfiles` links `guards/` as a whole directory and the hook
-   is already registered, so nothing else changes.
-- `skills/`, `agents/`, `rules/`, `refs/`, and `themes/` → linked **per-entry** (not as whole directories), since `~/.claude/skills` and `~/.claude/rules` can already contain plugin-managed entries (e.g. context7) that must not be clobbered. `refs/` holds reference docs too long to inline into a skill or rule — they aren't auto-discovered by Claude Code, so a skill or rule must link to them explicitly by path (from a skill at `claude/skills/<name>/SKILL.md`, that's a `../../refs/<ref-name>.md` relative link). `agents/` holds subagent definitions (flat `.md` files, like `rules/`) that skills can dispatch to via the Agent tool for a second opinion or a parallel multi-perspective pass.
-- `settings.json` → **deep-merged** into `~/.claude/settings.json` via `jq` (`merge_json` in `bin/dotfiles`), not symlinked like everything else in this repo. Tracked keys win, but machine-local keys (e.g. `model`, `effortLevel`) already in the destination are preserved. It registers the env-guard hook, and its `permissions.ask` list covers `make`, the one wrapper with no verb grammar to classify. `ask` rules are evaluated independently of hooks and still prompt even when a hook returns `allow`, so the two layers compose rather than override each other. Rule syntax is `Bash(cmd *)` — the trailing space-star enforces a word boundary, so `Bash(ansible *)` matches `ansible` and `ansible -m ping` but not `ansible-lint`; `Bash(make deploy*)` without the space deliberately also matches `make deploy-prod`. Rules are matched against each subcommand of a compound command separately. Its `env` block pins `CLAUDE_CODE_NATIVE_CURSOR=1`: Claude Code otherwise hides the real terminal cursor and paints an inverse-video block, which no terminal setting can restyle. With the flag it positions the real cursor and never emits DECSCUSR, so the terminal's own shape and blink apply. The flag is undocumented — it is in the binary's env-var registry but not the published docs — so re-check it after a Claude Code upgrade. It is also refused while the DECSTBM scroll-region renderer is active, which is the first thing to suspect if the block cursor comes back. It also pins `CLAUDE_CODE_TMUX_TRUECOLOR=1`, because Claude Code caps itself to 256 colours whenever `$TMUX` is set — every cmux tab runs in tmux, so the cap is always on here. The symptom is not missing colour but *wrong* colour: 24-bit values are quantised to the xterm cube, so a theme's `#282C34` is painted `#5F5F5F`. It only shows up once a theme uses real hex; the `ansi:` names in the stock `dark-ansi` theme survive the cap untouched, which is why this sat unnoticed. To check it, `tmux capture-pane -p -e` the pane and count `48;2;` against `48;5;` — under the cap there are no `48;2;` at all.
-- `mcp.json` → **deep-merged** into `~/.claude.json`, not `~/.claude/settings.json` — user-scope MCP servers live in a different file from every other Claude setting here, which is the only reason this needs saying. It is optional and absent from this checkout; `merge_json` has no missing-source guard, so a run without it prints `Failed to merge JSON for '.claude.json'` and changes nothing. The secrets convention is in the comment at the call site.
+7. **Adding a tool is one new `.guard` file** in `claude/plugin/hooks/guards/`.
+   The plugin ships the directory as a whole and the hook is already registered,
+   so nothing else changes — then bump the plugin `version`.
+- `plugin/skills/`, `plugin/agents/`, `plugin/refs/` travel with the plugin. `refs/` holds reference docs too long to inline into a skill or rule — they aren't auto-discovered by Claude Code, so a skill links them by relative path (`../../refs/<ref-name>.md` from a `SKILL.md`, `../refs/…` from an agent), and a file a skill bundles is reached as `${CLAUDE_SKILL_DIR}/…`. Both resolve wherever the plugin is installed; `~/.claude/skills/<name>/…` does not, since plugin skills are not there. `rules/` and `themes/` stay outside the plugin and are linked **per entry**, since `~/.claude/rules` can hold rules this repo does not own. The one rule links `~/.claude/refs/knowledge-placement.md`, which `bin/dotfiles` links to the plugin's copy so rule and skills share one file.
+- `settings.json` → **deep-merged** into `~/.claude/settings.json` via `jq` (`merge_json` in `bin/lib/claude.sh`), not symlinked like everything else in this repo. Tracked keys win and arrays are unioned, so deleting an array entry here never deletes it from a live file — that needs a migration like `prune_legacy_hook`. Keys that weaken safety prompts (`permissions.defaultMode`, `skip*PermissionPrompt`, `remoteControlAtStartup`) do not belong here but in `~/.dotfiles-private/claude/settings.json`, merged right after, so a fork does not inherit them. Its `permissions.ask` list covers `make`, the one wrapper with no verb grammar to classify. `ask` rules are evaluated independently of hooks and still prompt even when a hook returns `allow`, so the two layers compose rather than override each other. Rule syntax is `Bash(cmd *)` — the trailing space-star enforces a word boundary, so `Bash(ansible *)` matches `ansible` and `ansible -m ping` but not `ansible-lint`; `Bash(make deploy*)` without the space deliberately also matches `make deploy-prod`. Rules are matched against each subcommand of a compound command separately. Its `env` block pins `CLAUDE_CODE_NATIVE_CURSOR=1`: Claude Code otherwise hides the real terminal cursor and paints an inverse-video block, which no terminal setting can restyle. With the flag it positions the real cursor and never emits DECSCUSR, so the terminal's own shape and blink apply. The flag is undocumented — it is in the binary's env-var registry but not the published docs — so re-check it after a Claude Code upgrade. It is also refused while the DECSTBM scroll-region renderer is active, which is the first thing to suspect if the block cursor comes back. It also pins `CLAUDE_CODE_TMUX_TRUECOLOR=1`, because Claude Code caps itself to 256 colours whenever `$TMUX` is set — every cmux tab runs in tmux, so the cap is always on here. The symptom is not missing colour but *wrong* colour: 24-bit values are quantised to the xterm cube, so a theme's `#282C34` is painted `#5F5F5F`. It only shows up once a theme uses real hex; the `ansi:` names in the stock `dark-ansi` theme survive the cap untouched, which is why this sat unnoticed. To check it, `tmux capture-pane -p -e` the pane and count `48;2;` against `48;5;` — under the cap there are no `48;2;` at all.
+- `mcp.json` → **deep-merged** into `~/.claude.json`, not `~/.claude/settings.json` — user-scope MCP servers live in a different file from every other Claude setting here, which is the only reason this needs saying. It is optional and absent from this checkout; `merge_json` skips a missing source. The secrets convention is in the comment at the call site.
 - `statusline-command.sh` → symlinked to `~/.claude/statusline-command.sh`.
 - `themes/onedark.json` → `~/.claude/themes/onedark.json`, selected by `"theme": "custom:onedark"` in `settings.json`. Its `base` is `dark-ansi`, and that choice is load-bearing in both directions. Three separate things in Claude Code branch on whether the theme identifier contains `"ansi"`: the colour mode for the diff renderer, the syntax highlighting theme, and the diff syntax scheme. On an ansi base all three read the terminal palette, so inline code and code blocks are One Dark Pro. On a `dark` base they are hardcoded instead — code blocks become Monokai, and inline code becomes `#B1B9F9`, a violet belonging to no palette here. That colour is **not reachable from this file**: it is read from the base theme rather than the merged overrides, verified by setting `permission`, `suggestion` and `remember` to a probe value and watching the probe land elsewhere while inline code never moved. Choosing the base is the only control over it.
   The price of the ansi base is that hex fed to the diff renderer is quantised to the 256-colour cube, so a fill must be a cube entry that maps to itself. `#2E4433` and `#53353D` do not — they land on `(0,95,95)` teal and `(95,95,95)` grey, which is what "the diff is cyan and grey" means. `ansi:green`/`ansi:red` survive but are bright fills that leave the row text at **1.06:1**. The six diff fills are two hue ramps, each a 135-level row over a 95-level partner: `#008700`/`#005F00` and `#870000`/`#5F0000`, cube entries 28/22 and 88/52. The 95-level entry serves as both the word fill and the dimmed fill, so a highlighted word reads as the same colour going darker rather than a different colour entirely. The rows cost different amounts of text contrast — 2.21:1 added against 4.85:1 removed — because green carries 3.4x red's luminance weight at the same channel value; the added row is the deliberate end of that trade, chosen over a darker `#005F00` row because the cube has no green below 95 to pair it with, only black. An earlier revision of this file claimed no usable green existed at all; that was an artifact of demanding 4.5:1 on a fill sitting behind body text, and it is the reason the base was wrong for a while.
   Everything not fed to the diff renderer keeps exact truecolor hex on either base — the panel fills render as written, confirmed by `48;2;66;72;84` and `48;2;40;44;52` in a pane capture. Two traps when editing. An override naming a token the base lacks is **silently dropped**, so verify a new key against the base rather than trusting a clean start. `diffAddedWord` and `diffRemovedWord` are word-level **fills** painted over the row fill, so they carry the row's text — which the renderer emits as bare `ESC[37m`, i.e. palette 7 (`#ABB2BF`), never a theme token. Tuned as foregrounds they were `#98C379`/`#E06C75`, which quantise to `#87D787` and `#DF8787`: light blocks under light text, at **1.23:1** and **1.28:1**. A word fill has to go *darker* than its row, not brighter — only 22 cube entries clear 3.2:1 against `#ABB2BF` at all, and every one of them is dark. `composerSidebarBackground` (the changes pane) is the pane colour `#21252B` rather than a lighter panel shade: with `background-opacity-cells` in `ghostty/config` a fill is exactly as translucent as the window, so any other colour shows as a tinted block. Raising it again means re-checking the four real fills against it, since a fill tuned only against the pane can disappear on a lighter one. Claude Code's `/theme` editor writes a theme back by renaming a temp file over it, which replaces the symlink with a regular file — a theme tweaked in the UI detaches from this repo until `bin/dotfiles` re-links it.
 
-`bin/claude-export-skills` is a separate utility (not run by `bin/dotfiles`) that zips up `~/.claude/skills/*` for uploading to claude.ai.
+`bin/claude-export-skills` is a separate utility (not run by `bin/dotfiles`) that zips up `~/.claude/skills/*` and the skills of plugins linked there (`~/.claude/skills/*/skills/*`) for uploading to claude.ai.
 
 ### Package Definitions
 
-Homebrew formulae, casks, and npm packages are defined inline in `bin/dotfiles` (not a Brewfile). Edit that file to add/remove packages.
+macOS packages are in `Brewfile`, installed with `brew bundle` (`HOMEBREW_CASK_OPTS=--adopt`, so an app already in `/Applications` is taken over rather than failing the bundle). `brew bundle check --verbose` lists what is missing, `brew bundle cleanup` what is installed but undeclared. Linux servers get only `packages/linux.txt` (bash, curl, git, jq, tmux, zsh — names identical across apt, dnf, apk and pacman).
 
 ### Terminals
 

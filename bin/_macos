@@ -1,5 +1,9 @@
+#!/bin/sh
 ## For reference visit https://macos-defaults.com/
 ## This are my prefered settings, so please adjust it to your needs.
+## Run by bin/dotfiles as `sh bin/_macos`, never sourced.
+
+. "${DOTFILES_DIRECTORY:-$HOME/.dotfiles}/bin/lib/ui.sh"
 
 ## Close any open System Preferences panes, to prevent them from overriding
 ## settings we’re about to change
@@ -224,7 +228,7 @@ defaults write com.apple.finder ShowMountedServersOnDesktop -bool false
 defaults write com.apple.finder ShowRemovableMediaOnDesktop -bool false
 
 ## https://macos-defaults.com/finder/CreateDesktop.html
-defaults write com.apple.finder CreateDesktop --bool false
+defaults write com.apple.finder CreateDesktop -bool false
 
 ## https://macos-defaults.com/finder/AppleShowAllFiles.html
 # defaults write com.apple.finder AppleShowAllFiles -bool true
@@ -376,8 +380,11 @@ defaults write com.apple.dock show-recents -bool false
 find "${HOME}/Library/Application Support/Dock" -name "*-*.db" -maxdepth 1 -delete
 
 ## Add iOS & Watch Simulator to Launchpad
-sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" "/Applications/Simulator.app"
-sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator (Watch).app" "/Applications/Simulator (Watch).app"
+## Without Xcode these would be dangling links in /Applications.
+if [ -d /Applications/Xcode.app ]; then
+  sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" "/Applications/Simulator.app"
+  sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator (Watch).app" "/Applications/Simulator (Watch).app"
+fi
 
 ## Add a spacer to the left side of the Dock (where the applications are)
 # defaults write com.apple.dock persistent-apps -array-add '{tile-data={}; tile-type="spacer-tile";}'
@@ -566,7 +573,7 @@ defaults write com.apple.spotlight orderedItems -array \
 killall mds > /dev/null 2>&1
 
 ## Disable indexing on workspace directory
-sudo mdutil -i off "$HOME/Workspace" > /dev/null
+[ -d "$HOME/Workspace" ] && sudo mdutil -i off "$HOME/Workspace" > /dev/null
 
 ## Make sure indexing is enabled for the main volume
 sudo mdutil -i on / > /dev/null
@@ -747,14 +754,14 @@ defaults write com.operasoftware.OperaDeveloper PMPrintingExpandedStateForPrint2
 ## HyperSwitch
 ##
 
-defaults write ccom.bahoom.HyperSwitch run_in_background -boolean true
-defaults write ccom.bahoom.HyperSwitch welcome_window_shown -boolean true
-defaults write ccom.bahoom.HyperSwitch app_switcher_auto_activate -boolean true
-defaults write ccom.bahoom.HyperSwitch app_switcher_auto_activate_delay -int 750
-defaults write ccom.bahoom.HyperSwitch shift_to_cycle_backwards -boolean true
-defaults write ccom.bahoom.HyperSwitch window_preview_size -float 190.0
-defaults write ccom.bahoom.HyperSwitch window_switcher_current_app_keycode -int 48
-defaults write ccom.bahoom.HyperSwitch window_switcher_mod -int 2
+defaults write com.bahoom.HyperSwitch run_in_background -boolean true
+defaults write com.bahoom.HyperSwitch welcome_window_shown -boolean true
+defaults write com.bahoom.HyperSwitch app_switcher_auto_activate -boolean true
+defaults write com.bahoom.HyperSwitch app_switcher_auto_activate_delay -int 750
+defaults write com.bahoom.HyperSwitch shift_to_cycle_backwards -boolean true
+defaults write com.bahoom.HyperSwitch window_preview_size -float 190.0
+defaults write com.bahoom.HyperSwitch window_switcher_current_app_keycode -int 48
+defaults write com.bahoom.HyperSwitch window_switcher_mod -int 2
 
 ##
 ## Set default applications
@@ -769,33 +776,39 @@ duti -s com.microsoft.VSCode public.data all
 ## Kill affected applications
 ##
 
-for app in "Activity Monitor" \
-  "Address Book" \
-  "Calendar" \
-  "cfprefsd" \
-  "Contacts" \
-  "Dock" \
-  "Docker" \
-  "Finder" \
-  "Google Chrome Canary" \
-  "Google Chrome" \
-  "HyperDock" \
-  "HyperSwitch" \
-  "Mail" \
-  "Messages" \
-  "Microsoft Edge" \
-  "Photos" \
-  "Safari" \
-  "Sequel Ace" \
-  "Skype" \
-  "SystemUIServer" \
-  "WebStorm" \
-  "Visual Studio Code" \
-  "iCal"; do
-  killall "${app}" &> /dev/null
+## These re-read their preferences only on restart and hold no user work.
+for app in "cfprefsd" "Dock" "Finder" "SystemUIServer"; do
+  killall "${app}" > /dev/null 2>&1
 done
 
-seek_confirmation "Done. Note that some of these changes require a logout/restart to take effect."
-if is_confirmed; then
+## These can hold unsaved work (a draft mail, an unsaved editor buffer), so
+## they only quit when asked; the new defaults apply on their next launch.
+if confirm "Quit running apps whose settings changed (Mail, Safari, Chrome, Edge, VS Code, …)?"; then
+  for app in "Activity Monitor" \
+    "Address Book" \
+    "Calendar" \
+    "Contacts" \
+    "Docker" \
+    "Google Chrome Canary" \
+    "Google Chrome" \
+    "HyperDock" \
+    "HyperSwitch" \
+    "Mail" \
+    "Messages" \
+    "Microsoft Edge" \
+    "Photos" \
+    "Safari" \
+    "Sequel Ace" \
+    "Skype" \
+    "WebStorm" \
+    "Visual Studio Code" \
+    "iCal"; do
+    killall "${app}" > /dev/null 2>&1
+  done
+fi
+
+print_notice "Some of these changes require a logout/restart to take effect."
+## ask, not confirm: --yes answers every other prompt, but never this one.
+if ask "Restart now?"; then
 	sudo reboot
 fi

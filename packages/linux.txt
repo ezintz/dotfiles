@@ -1,0 +1,10 @@
+# Installed by bin/dotfiles on Linux, with apt, dnf, apk or pacman. The names
+# are the same in all four. Just enough for the shell config, git and the
+# Claude Code env guard, which runs under /bin/bash (absent on Alpine) and
+# needs jq to classify anything.
+bash
+curl
+git
+jq
+tmux
+zsh

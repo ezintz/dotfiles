@@ -4,24 +4,51 @@
 system. These are mine: shell (Zsh/Prezto), Git, SSH, tmux, macOS defaults, and a
 global Claude Code setup.
 
-macOS only.
-
-## Prerequisites
-
-- macOS with the Xcode command line tools (`xcode-select --install`)
-- [Zsh](http://www.zsh.org/) 4.3.17 or higher, for the automated installation and
-  [prezto](https://github.com/ezintz/prezto)
-
-Homebrew is installed by `bin/dotfiles` if it is missing.
+macOS first; the installer, shell, git, tmux and Claude Code setup also work on
+Linux servers (Debian/Ubuntu, Fedora, Alpine, Arch).
 
 ## Installation
 
+On a brand-new machine, with nothing installed:
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/bin/dotfiles | /usr/bin/env zsh
+curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/install.sh | sh
 ```
 
-This clones the repository to `~/.dotfiles` and runs the full setup. If you cloned
-it yourself, run `git submodule update --init --recursive` first.
+On macOS this installs the Xcode Command Line Tools (confirm the dialog) and
+Homebrew first. On a server without git, the repository is downloaded as a
+tarball and turned into a git checkout once git is installed. Either way it
+ends up at `~/.dotfiles` — the location is fixed, because the shell and tmux
+config refer to it — and `bin/dotfiles` runs.
+
+To install your fork, set `DOTFILES_REMOTE` (and `DOTFILES_BRANCH`):
+
+```sh
+curl -fsSL …/install.sh | DOTFILES_REMOTE=https://github.com/you/dotfiles.git sh
+```
+
+Arguments after `sh -s --` are passed on to `bin/dotfiles`, e.g.
+`curl -fsSL …/install.sh | sh -s -- --yes`.
+
+### Only the Claude Code part
+
+The env guard, skills and agents are a Claude Code plugin, `dotfiles`, in the
+`ezintz` marketplace this repository provides:
+
+```sh
+claude plugin marketplace add ezintz/dotfiles
+claude plugin install dotfiles@ezintz
+```
+
+`claude/bootstrap.sh` does that and also installs what a plugin cannot carry:
+the global instructions, rules and the `make` ask rules.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/claude/bootstrap.sh | sh
+```
+
+It replaces `~/.claude/CLAUDE.md`; the previous one is kept next to it as
+`CLAUDE.md.backup-<time>`.
 
 ## Usage
 
@@ -33,13 +60,22 @@ the symlinks, and applies the macOS configuration.
 dotfiles --no-packages \     # Do not install/update packages
   --no-sync \              # Do not sync with repository
   --no-links \             # Do not create symbolic links or set the Git identity
-  --no-configuration        # Do not apply macOS defaults
+  --no-configuration \     # Do not apply macOS defaults
+  --yes \                  # Answer every question with yes (except "restart now?")
+  --dry-run                # Print what would change, change nothing
 ```
 
 _Note: To be able to run the synchronization you should commit the changes that you make._
 
 Editing files in this repository immediately affects the live configuration — the
-setup symlinks them into `~` rather than copying them.
+setup symlinks them into `~` rather than copying them. Nothing is overwritten: a
+file or directory already in the way is moved aside as `<name>.backup-<timestamp>`.
+`~/.zshrc` is the exception — if one exists it is left alone, and `dotfiles`
+prints the line to add to it.
+
+There is no uninstall. Every link points into `~/.dotfiles`, so
+`find ~ -maxdepth 3 -lname "$HOME/.dotfiles/*"` lists what to remove, and the
+`.backup-*` files are what was there before.
 
 ## What's inside my dotfiles?
 
@@ -57,78 +93,68 @@ setup symlinks them into `~` rather than copying them.
   session so shells survive cmux restarts and reboots, with Claude Code resuming
   the same conversation it was in.
 - **`claude/`** — the global (`~/.claude/`) [Claude Code](https://claude.ai/code)
-  setup: instructions, skills, agents, rules, settings, and a `PreToolUse` env
-  guard that makes destructive commands aimed at a non-local target ask first.
-  The details live in [CLAUDE.md](CLAUDE.md).
+  setup. `claude/plugin/` is a standard Claude Code plugin: a `PreToolUse` env
+  guard that makes destructive commands aimed at a non-local target ask first
+  (kubectl, helm, terraform/tofu, argocd, gh, glab, git, mysql, psql, …), plus
+  review, debugging and authoring skills and agents. Next to it: the global
+  instructions, rules and settings, which a plugin cannot carry. The details
+  live in [CLAUDE.md](CLAUDE.md).
 - **`iterm2/`** — the iTerm2 preferences plist and the OneDark color scheme. Not
   symlinked: `bin/_macos` instead points iTerm2's "load preferences from a custom
   folder" at this directory, so iTerm2 reads *and writes back* the tracked plist.
+  In a fork that means a dirty working tree after every iTerm2 session, and the
+  plist carries a few of my absolute paths.
 - **`ghostty/`** — the terminal config [cmux](https://cmux.com) renders with, since
   cmux embeds libghostty and exposes no font or cursor settings of its own.
 - **`cmux/`** — cmux's own settings (shortcuts, sidebar colours, notifications),
   as opposed to how its terminal panes render.
 - **`bin/_macos`** — a default set of settings for macOS (Dock, Finder, Safari and
   friends), gratuitously stolen from [@mathiasbynens](https://mths.be/dotfiles) and
-  customized to my needs.
+  customized to my needs. **Read it before running it on your Mac.** It is
+  opinionated and some of it is invasive: it turns off the "are you sure you
+  want to open this application?" quarantine dialog, disables the boot chime
+  (`nvram`), renames an icon inside `Dropbox.app`, resets the Launchpad
+  database, and asks to quit running apps (Mail, Safari, browsers, editors) so
+  their settings apply. The Safari settings only take effect if the terminal
+  has Full Disk Access. `dotfiles --no-configuration` skips it entirely.
 - `curlrc` and `wgetrc`.
 
 ### Private overlay
 
-An optional `~/.dotfiles-private` directory (a separate, untracked repository) can
-hold `gitconfig.local`, `zpreztorc.local`, `tmux.conf.local` and `zprofile.local`.
-If it exists, those files are symlinked into `~` alongside the tracked config, so
-machine-specific or non-public settings never have to land in this repository.
+An optional `~/.dotfiles-private` directory (a separate, untracked repository) keeps
+machine-specific or non-public settings out of this one. If it exists:
+
+- `gitconfig.local`, `zpreztorc.local`, `tmux.conf.local`, `zprofile.local` and
+  `zshrc.local` are symlinked into `~` alongside the tracked config;
+- `Brewfile` is installed after the tracked one;
+- `claude/settings.json` is merged into `~/.claude/settings.json` after the tracked
+  one — this is where personal Claude Code choices such as auto permission mode
+  belong, so a fork of this repository does not inherit them;
+- `claude/skills/<name>/` are linked into `~/.claude/skills` one by one.
 
 ### Packages
 
-Homebrew formulae and casks are defined inline at the top of `bin/dotfiles` — edit
-that file to add or remove packages. The full set is:
+macOS packages are declared in [`Brewfile`](Brewfile) and installed with
+`brew bundle`; `brew bundle check --verbose` shows what is missing. An app that
+is already in `/Applications` is adopted rather than reinstalled. Highlights:
+the Kubernetes and infrastructure CLIs the Claude Code guard knows about
+(kubectl, helm, k9s, argocd, opentofu, ansible), `gh`/`glab`, `jq`, `uv`,
+`bats-core` for the test suite, cmux and iTerm2, Claude and Codex, and
+Brave, Firefox Developer Edition, Chrome and Edge.
 
-**Formulae**
-
-- [ack](http://beyondgrep.com/): Tool like grep, optimized for programmers.
-- [bat](https://github.com/sharkdp/bat): A `cat` clone with syntax highlighting.
-- [bats-core](https://github.com/bats-core/bats-core): Test framework for Bash; runs this repository's test suite.
-- [coreutils](http://www.gnu.org/software/coreutils/): The GNU Core Utilities.
-- [curl](http://curl.haxx.se/): Tool for client-side URL transfers.
-- [duti](https://github.com/moretension/duti): Sets the default application for a document type.
-- [fortune](<https://en.wikipedia.org/wiki/Fortune_(Unix)>): Displays a pseudorandom message from a database of quotations.
-- [git](http://git-scm.com/): Distributed version control system.
-- [git-extras](https://github.com/tj/git-extras): Some extras for `git`.
-- [helm](https://helm.sh/): Package manager for Kubernetes.
-- [jq](https://jqlang.github.io/jq/): Command-line JSON processor.
-- [kubernetes-cli](https://kubernetes.io/docs/reference/kubectl/): `kubectl`, the Kubernetes command-line tool.
-- [node](http://nodejs.org/): JavaScript runtime.
-- [opentofu](https://opentofu.org/): Open source infrastructure as code.
-- [reattach-to-user-namespace](https://github.com/ChrisJohnsen/tmux-MacOSX-pasteboard): Gives tmux sessions access to the macOS pasteboard.
-- [tmux](https://tmux.github.io/): Terminal multiplexer like [screen](https://www.gnu.org/software/screen/).
-- [uv](https://docs.astral.sh/uv/): Python package and project manager; installs into a venv rather than the PEP 668 managed interpreter.
-- [wget](http://www.gnu.org/software/wget/): GNU Wget is a free software package for retrieving files.
-- [wireguard-tools](https://www.wireguard.com/): WireGuard VPN tooling.
-
-**Casks**
-
-- [1password](https://1password.com/) and [1password-cli](https://developer.1password.com/docs/cli/): Password manager, and its command-line interface.
-- [dropbox](https://www.dropbox.com/) and [google-drive](https://www.google.com/drive/): File sync.
-- [google-chrome](https://www.google.com/chrome/) and [microsoft-edge](https://www.microsoft.com/edge): Browsers.
-- [krisp](https://krisp.ai/): Noise cancellation for calls.
-- [orbstack](https://orbstack.dev/): Docker and Linux containers on macOS.
-- [sequel-ace](https://sequel-ace.com/): MySQL/MariaDB database client.
-- [slack](https://slack.com/): Chat.
-- [stats](https://github.com/exelban/stats): System monitor for the menu bar.
-- [visual-studio-code](https://code.visualstudio.com/) and [jetbrains-toolbox](https://www.jetbrains.com/toolbox-app/): Editors and IDEs.
-- [font-jetbrains-mono-nerd-font](https://www.nerdfonts.com/): The terminal font.
+On Linux only the basics in [`packages/linux.txt`](packages/linux.txt) are
+installed (bash, curl, git, jq, tmux, zsh), with apt, dnf, apk or pacman.
 
 ## Tests
 
-There is no linting. The one test suite pins the behaviour of the Claude Code env
-guards:
+The test suite pins the behaviour of the Claude Code env guards:
 
 ```sh
-bats claude/tests/guards.bats
+bats claude/plugin/tests/guards.bats
 ```
 
-Run it after any change under `claude/hooks/`.
+Run it after any change under `claude/plugin/hooks/`. The installer scripts are
+POSIX sh; check them with `shellcheck -s sh` (see [CLAUDE.md](CLAUDE.md)).
 
 ## Credits
 
