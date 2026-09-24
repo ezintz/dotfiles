@@ -1,7 +1,9 @@
 # Installed by bin/dotfiles on Linux, with apt, dnf, apk or pacman. The names
-# are the same in all four. Just enough for the shell config, git and the
-# Claude Code env guard, which runs under /bin/bash (absent on Alpine) and
-# needs jq to classify anything.
+# are the same in all four. The shell config, git and the Claude Code env
+# guard need most of these: the guard runs under /bin/bash (absent on Alpine)
+# and needs jq to classify anything. age is here because every machine should
+# have it, as in the Brewfile.
+age
 bash
 curl
 git

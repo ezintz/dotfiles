@@ -13,6 +13,7 @@ tap "oven-sh/bun"
 
 # Shell and general CLI
 brew "ack"
+brew "age"
 brew "bat"
 brew "coreutils"
 brew "curl"
