@@ -194,6 +194,7 @@ defaults write com.apple.screensaver askForPassword -int 1
 defaults write com.apple.screensaver askForPasswordDelay -int 0
 
 ## Save screenshots to the desktop
+# shellcheck disable=SC2088 # macOS expands the ~ itself
 defaults write com.apple.screencapture location -string "~/Desktop"
 
 ## Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)
@@ -751,17 +752,16 @@ defaults write com.operasoftware.Opera PMPrintingExpandedStateForPrint2 -boolean
 defaults write com.operasoftware.OperaDeveloper PMPrintingExpandedStateForPrint2 -boolean true
 
 ##
-## HyperSwitch
+## AltTab (window switcher; replaces HyperSwitch, which is unmaintained and
+## no longer in Homebrew). Its defaults already match what HyperSwitch was set
+## to: ⌥⇥ cycles all windows, ⇧ goes back, ⌥` cycles the current app's windows.
+## AltTab stores every preference as a string.
 ##
 
-defaults write com.bahoom.HyperSwitch run_in_background -boolean true
-defaults write com.bahoom.HyperSwitch welcome_window_shown -boolean true
-defaults write com.bahoom.HyperSwitch app_switcher_auto_activate -boolean true
-defaults write com.bahoom.HyperSwitch app_switcher_auto_activate_delay -int 750
-defaults write com.bahoom.HyperSwitch shift_to_cycle_backwards -boolean true
-defaults write com.bahoom.HyperSwitch window_preview_size -float 190.0
-defaults write com.bahoom.HyperSwitch window_switcher_current_app_keycode -int 48
-defaults write com.bahoom.HyperSwitch window_switcher_mod -int 2
+defaults write com.lwouis.alt-tab-macos windowDisplayDelay -string 1000
+## AppearanceSizePreference: 0 small, 1 medium, 2 large, 3 auto.
+defaults write com.lwouis.alt-tab-macos appearanceSize -string 1
+defaults write com.lwouis.alt-tab-macos startAtLogin -string true
 
 ##
 ## Set default applications
@@ -792,7 +792,7 @@ if confirm "Quit running apps whose settings changed (Mail, Safari, Chrome, Edge
     "Google Chrome Canary" \
     "Google Chrome" \
     "HyperDock" \
-    "HyperSwitch" \
+    "AltTab" \
     "Mail" \
     "Messages" \
     "Microsoft Edge" \

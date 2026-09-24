@@ -1,8 +1,13 @@
-# Installed by `bin/dotfiles` with `brew bundle`. A private overlay can add
-# machine-specific packages in ~/.dotfiles-private/Brewfile.
+# Installed by `bin/dotfiles` with `brew bundle`. VS Code extensions are not
+# listed here: VS Code Settings Sync owns them, along with settings, keybindings
+# and snippets, and two owners would reinstall what the other removed.
+# A private overlay can add machine-specific packages in
+# ~/.config/dotfiles/Brewfile.
 #
 # `brew bundle check --verbose` lists what is missing here;
-# `brew bundle cleanup` lists what is installed but not declared.
+# `brew bundle cleanup` needs both files, or it counts this machine's own
+# packages as undeclared:
+#   brew bundle cleanup --file=<(cat Brewfile ~/.config/dotfiles/Brewfile)
 
 tap "oven-sh/bun"
 
@@ -26,36 +31,33 @@ brew "git-extras"
 brew "git-lfs"
 brew "gh"
 brew "glab"
+brew "tea"
 
 # Kubernetes and infrastructure
 brew "ansible"
 brew "argocd"
-brew "cntb"
-brew "hcloud"
 brew "helm"
 brew "k9s"
 brew "kubernetes-cli"
 brew "opentofu"
 
 # Languages and build tools
-brew "dotnet"
 brew "golangci-lint"
 brew "node"
 brew "node@24"
 brew "nx"
 brew "oven-sh/bun/bun"
 brew "uv"
-brew "zig"
 
 # Network and system
 brew "dnsmasq"
 brew "nmap"
 brew "telnet"
-brew "wireguard-tools"
 
 # macOS helpers
 brew "cliclick"
 brew "duti"
+brew "mas"
 
 # Tests (claude/plugin/tests/guards.bats)
 brew "bats-core"
@@ -76,17 +78,26 @@ cask "microsoft-edge"
 # Development
 cask "android-commandlinetools"
 cask "jetbrains-toolbox"
-cask "orbstack"
 cask "sequel-ace"
-cask "utm"
 cask "visual-studio-code"
 
 # Everything else
 cask "1password"
 cask "1password-cli"
-cask "dropbox"
+cask "alt-tab"
+cask "appcleaner"
 cask "google-drive"
 cask "krisp"
 cask "slack"
 cask "stats"
 cask "font-jetbrains-mono-nerd-font"
+
+# App Store (needs a signed-in App Store; `mas` installs them by id)
+mas "Xcode", id: 497799835
+mas "Keynote", id: 409183694
+mas "Numbers", id: 409203825
+mas "Pages", id: 409201541
+
+# uv tools
+uv "codegraphcontext"
+
