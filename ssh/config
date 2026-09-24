@@ -6,7 +6,9 @@ HashKnownHosts no
 #ConnectTimeout 2
 
 Include ~/.orbstack/ssh/config
-Include ~/.ssh/config.d/*
+## Per-host files live in the private overlay (bin/dotfiles). ssh expands `~`
+## but not $XDG_CONFIG_HOME, so this is the XDG default spelled out.
+Include ~/.config/dotfiles/ssh/*
 
 # See: https://jira.atlassian.com/browse/BSERV-7763
 Host bitbucket.org

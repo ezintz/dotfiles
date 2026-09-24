@@ -34,6 +34,21 @@ ask() {
   return 1
 }
 
+# read_input <question> [default]: free-text answer in $INPUT, from /dev/tty
+# for the same reason as ask. Empty input takes the default; with no terminal
+# $INPUT is the default and the return status is 1.
+read_input() {
+  INPUT=
+  printf '%s? %s%s%s ' "$_c_cyan" "$1" "${2:+ [$2]}" "$_c_reset"
+  if ! { read -r INPUT < /dev/tty; } 2>/dev/null; then
+    printf '\n'
+    INPUT="${2:-}"
+    return 1
+  fi
+  [ -n "$INPUT" ] || INPUT="${2:-}"
+  return 0
+}
+
 # Like ask, but --yes (DOTFILES_YES=1) answers it.
 confirm() {
   if [ -n "${DOTFILES_YES:-}" ]; then
@@ -50,6 +65,16 @@ run() {
     return 0
   fi
   "$@"
+}
+
+# run, but without the command's own output — which a plain `run … >/dev/null`
+# would take down together with the --dry-run line.
+run_quiet() {
+  if [ -n "${DOTFILES_DRY_RUN:-}" ]; then
+    run "$@"
+    return 0
+  fi
+  "$@" </dev/null >/dev/null 2>&1
 }
 
 has() { command -v "$1" >/dev/null 2>&1; }

@@ -23,12 +23,15 @@
 [include]
   ## Expand the configuration by including the local configuration. With this trick I can keep my
   ## gitconfig clean (without adding personal information).
-  path = ~/.gitauthor ; expand "foo" in your `$HOME` directory
-  path = ~/.gitconfig.local
+  ## The private overlay (bin/dotfiles: $XDG_CONFIG_HOME/dotfiles). git expands
+  ## `~` in include paths but not environment variables, so this is the XDG
+  ## default spelled out.
+  path = ~/.config/dotfiles/gitauthor
+  path = ~/.config/dotfiles/gitconfig
 
 [user]
   ## Fail instead of inventing an identity. Without this, a machine where
-  ## ~/.gitauthor is missing still commits happily, using <user>@<hostname> --
+  ## the overlay's gitauthor is missing still commits happily, using <user>@<hostname> --
   ## which publishes the login name and the machine name into a public history
   ## with no warning at all. This repository carries one such commit, authored
   ## from a box whose name is now permanent. Erroring out is the whole point.
@@ -210,3 +213,9 @@
   insteadOf = "gitlab.com://"
   pushInsteadOf = "gitlab://"
   pushInsteadOf = "git://gitlab.com"
+[credential "https://github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/opt/homebrew/bin/gh auth git-credential

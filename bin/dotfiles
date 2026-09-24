@@ -15,6 +15,7 @@ Usage: dotfiles [options]
   -ns, --no-sync           do not pull this repository or its submodules
   -nl, --no-links          do not create symlinks or ask for the Git identity
   -nc, --no-configuration  do not apply the macOS defaults (bin/_macos)
+  -no, --no-overlay        do not set up or back up the private overlay repository
   -y,  --yes               answer yes to every question except "restart now?"
        --dry-run           print what would change, change nothing
   -h,  --help              show this help
@@ -26,21 +27,25 @@ EOF
 ## very file, and sh otherwise reads a script as it executes it.
 main() {
   DOTFILES_DIRECTORY=$(cd "$(dirname "$0")/.." && pwd -P)
-  DOTFILES_LOCAL_DIRECTORY="${HOME}/.dotfiles-private"
+  ## The private overlay (see Readme): configuration, so it lives where XDG
+  ## puts user configuration.
+  DOTFILES_LOCAL_DIRECTORY="${XDG_CONFIG_HOME:-${HOME}/.config}/dotfiles"
   export DOTFILES_DIRECTORY DOTFILES_LOCAL_DIRECTORY
 
   . "${DOTFILES_DIRECTORY}/bin/lib/ui.sh"
   . "${DOTFILES_DIRECTORY}/bin/lib/links.sh"
   . "${DOTFILES_DIRECTORY}/bin/lib/claude.sh"
   . "${DOTFILES_DIRECTORY}/bin/lib/packages.sh"
+  . "${DOTFILES_DIRECTORY}/bin/lib/overlay.sh"
 
-  no_packages=; no_sync=; no_links=; no_configuration=
+  no_packages=; no_sync=; no_links=; no_configuration=; no_overlay=
   for opt in "$@"; do
     case "$opt" in
       -np|--no-packages) no_packages=1 ;;
       -ns|--no-sync) no_sync=1 ;;
       -nl|--no-links) no_links=1 ;;
       -nc|--no-configuration) no_configuration=1 ;;
+      -no|--no-overlay) no_overlay=1 ;;
       -y|--yes) DOTFILES_YES=1 ;;
       --dry-run) DOTFILES_DRY_RUN=1 ;;
       -h|--help) usage; exit 0 ;;
@@ -55,6 +60,9 @@ main() {
   if [ "$DOTFILES_DIRECTORY" != "$(cd "${HOME}/.dotfiles" 2>/dev/null && pwd -P)" ]; then
     print_warning "This checkout is not at ~/.dotfiles, which the shell and tmux config expect."
   fi
+
+  ## Before sync, which pulls the overlay from its new location.
+  migrate_overlay
 
   if is_macos && ! xcode-select -p >/dev/null 2>&1; then
     abort "The Xcode Command Line Tools are missing. Run install.sh, or 'xcode-select --install' and re-run."
@@ -72,19 +80,24 @@ main() {
     install_packages
   fi
 
+  ## After the tracked packages, which bring the forge CLIs (gh, glab, tea) a
+  ## new machine needs to create or restore the overlay; before everything that
+  ## reads the overlay.
+  [ -n "$no_overlay" ] || setup_overlay
+  [ -n "$no_packages" ] || install_overlay_packages
+
   if [ -n "$no_links" ]; then
     print_notice "Skipped mirroring dotfiles."
   else
     print_header "Setting up dotfiles"
     if confirm "Link the dotfiles into ${HOME}? Existing files are moved aside, not deleted."; then
       mirror_files
-      mirror_local_files
       setup_claude
       print_success "... done!"
     else
       print_notice "Skipped mirroring dotfiles."
     fi
-    ## ~/.gitauthor is the identity the linked gitconfig includes, so it belongs
+    ## gitauthor is the identity the linked gitconfig includes, so it belongs
     ## with the links rather than with the macOS defaults.
     setup_git
   fi
@@ -100,6 +113,8 @@ main() {
       print_notice "Skipped macOS settings update."
     fi
   fi
+
+  [ -n "$no_overlay" ] || backup_overlay
 }
 
 sync_repositories() {
@@ -136,15 +151,16 @@ sync_repositories() {
 
 setup_git() {
   has git || return 0
-  [ -n "$(git config --file "${HOME}/.gitauthor" user.name 2>/dev/null)" ] && return 0
-  [ -n "${DOTFILES_DRY_RUN:-}" ] && { print_notice "Would ask for the Git identity (~/.gitauthor)."; return 0; }
+  _gitauthor="${DOTFILES_LOCAL_DIRECTORY}/gitauthor"
+  [ -n "$(git config --file "$_gitauthor" user.name 2>/dev/null)" ] && return 0
+  [ -n "${DOTFILES_DRY_RUN:-}" ] && { print_notice "Would ask for the Git identity (${_gitauthor})."; return 0; }
 
   print_header "Setting up Git identity ..."
   ## A subshell, not { …; }: in dash and busybox a failed redirection on the
   ## special builtin `:` exits the whole script, and there is no terminal in a
   ## container or under `curl | sh` without one.
   if ! (: < /dev/tty) 2>/dev/null; then
-    print_warning "No terminal to ask on. Set it later: git config --file ~/.gitauthor user.name 'Your Name' (and user.email)"
+    print_warning "No terminal to ask on. Set it later: git config --file ${_gitauthor} user.name 'Your Name' (and user.email)"
     return 0
   fi
   _username=; _email=
@@ -155,8 +171,9 @@ setup_git() {
     printf 'Your e-mail address: '; read -r _email < /dev/tty || return 0
   done
   if ask "Configure Git with \"${_username}\" <${_email}>?"; then
-    git config --file "${HOME}/.gitauthor" user.name "$_username"
-    git config --file "${HOME}/.gitauthor" user.email "$_email"
+    mkdir -p "$DOTFILES_LOCAL_DIRECTORY"
+    git config --file "$_gitauthor" user.name "$_username"
+    git config --file "$_gitauthor" user.email "$_email"
     print_success "... done!"
   else
     print_warning "Git identity not set. See https://git-scm.com/book/en/v2/Getting-Started-First-Time-Git-Setup"

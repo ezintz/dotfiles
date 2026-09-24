@@ -19,16 +19,25 @@ install_brew_packages() {
   print_header "Installing Homebrew packages ..."
   ## --adopt takes over an app that is already in /Applications (installed by
   ## hand or from a DMG) instead of failing the whole bundle on it.
-  for _brewfile in "${DOTFILES_DIRECTORY}/Brewfile" "${DOTFILES_LOCAL_DIRECTORY}/Brewfile"; do
-    [ -f "$_brewfile" ] || continue
-    run env HOMEBREW_CASK_OPTS="--adopt ${HOMEBREW_CASK_OPTS:-}" \
-      brew bundle install --file "$_brewfile" ||
-      print_warning "brew bundle reported failures for ${_brewfile}"
-  done
+  brew_bundle "${DOTFILES_DIRECTORY}/Brewfile"
+  run brew cleanup
+}
+
+brew_bundle() {
+  [ -f "$1" ] || return 0
+  run env HOMEBREW_CASK_OPTS="--adopt ${HOMEBREW_CASK_OPTS:-}" \
+    brew bundle install --file "$1" ||
+    print_warning "brew bundle reported failures for $1"
+}
+
+# The overlay's own Brewfile runs separately, after setup_overlay: on a new
+# machine the overlay only exists once it has been restored.
+install_overlay_packages() {
+  is_macos && load_homebrew || return 0
   if [ -f "${DOTFILES_LOCAL_DIRECTORY}/packages.zsh" ]; then
     print_warning "${DOTFILES_LOCAL_DIRECTORY}/packages.zsh is no longer read; move its packages to ${DOTFILES_LOCAL_DIRECTORY}/Brewfile"
   fi
-  run brew cleanup
+  brew_bundle "${DOTFILES_LOCAL_DIRECTORY}/Brewfile"
 }
 
 # The minimum for the shell, git and the Claude Code guard on a server:

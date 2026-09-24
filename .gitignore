@@ -17,3 +17,7 @@ claude/plugin/agents/
 
 # Byte-compiled cache from the skills' Python helpers, which import each other.
 __pycache__/
+
+# SSH host files moved to the private overlay; a stray one left in the old
+# location must never be committed to this public repository.
+ssh/config.d/
