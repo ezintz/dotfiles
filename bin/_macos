@@ -691,7 +691,11 @@ set_default com.googlecode.iterm2 AutoHideTmuxClientSession -bool true
 set_default com.googlecode.iterm2 NoSyncNewTabFromTmuxOpensTmux -bool true
 set_default com.googlecode.iterm2 "NoSyncNewTabFromTmuxOpensTmux_selection" -bool false
 set_default com.googlecode.iterm2 UseTmuxStatusBar -bool true
-set_default com.googlecode.iterm2 TmuxUsesDedicatedProfile -bool true
+## Explicitly false rather than simply absent: the dedicated `tmux` profile
+## this pointed at is gone from the plist, and a machine that already has the
+## key set to true would otherwise keep sending tmux sessions to a profile
+## that no longer exists. tmux integration sessions use Default like the rest.
+set_default com.googlecode.iterm2 TmuxUsesDedicatedProfile -bool false
 
 ## Set default directory for iTerm2 preferences.
 set_default com.googlecode.iterm2 LoadPrefsFromCustomFolder -bool true
