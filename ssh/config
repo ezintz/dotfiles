@@ -6,6 +6,9 @@ HashKnownHosts no
 #ConnectTimeout 2
 
 Include ~/.orbstack/ssh/config
+## Colima prepends an absolute-path Include to ~/.ssh/config, i.e. to this
+## tracked file, unless an Include already resolves to its ssh_config.
+Include ~/.colima/ssh_config
 ## Per-host files live in the private overlay (bin/dotfiles). ssh expands `~`
 ## but not $XDG_CONFIG_HOME, so this is the XDG default spelled out.
 Include ~/.config/dotfiles/ssh/*
