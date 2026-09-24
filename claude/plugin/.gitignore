@@ -1,0 +1,17 @@
+.DS_Store
+skills/*-workspace/
+
+# Not-yet-ready skills/refs/agents: loaded on a machine that links this
+# checkout in place, but never published with the plugin.
+skills/code-review/
+skills/code-review-and-quality/
+skills/git-diff/
+skills/performance-optimization/
+skills/security-and-hardening/
+refs/*
+## Graduated: three skills link it, so it has to travel with them.
+!refs/knowledge-placement.md
+agents/
+
+# Byte-compiled cache from the skills' Python helpers, which import each other.
+__pycache__/

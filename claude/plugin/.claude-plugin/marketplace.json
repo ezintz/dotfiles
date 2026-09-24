@@ -1,6 +1,6 @@
 {
   "name": "ezintz",
-  "description": "Claude Code plugins from ezintz/dotfiles.",
+  "description": "Claude Code plugins from ezintz.",
   "owner": {
     "name": "Eduard Zintz",
     "url": "https://github.com/ezintz"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "dotfiles",
-      "source": "./claude/plugin",
+      "source": "./",
       "description": "Env guards for destructive commands against non-local targets, plus review, debugging and authoring skills."
     }
   ]

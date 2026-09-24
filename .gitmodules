@@ -1,7 +1,11 @@
 [submodule "prezto"]
-	branch = master
+	branch = main
 	path = prezto
 	url = https://github.com/ezintz/prezto.git
 [submodule "tmux/plugins/tmux-resurrect"]
 	path = tmux/plugins/tmux-resurrect
 	url = https://github.com/tmux-plugins/tmux-resurrect.git
+[submodule "claude/plugin"]
+	path = claude/plugin
+	url = https://github.com/ezintz/dotfiles-claude-plugin.git
+	branch = main

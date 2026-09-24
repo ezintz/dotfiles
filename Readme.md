@@ -15,22 +15,8 @@ On a brand-new machine, with nothing installed:
 curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/install.sh | sh
 ```
 
-On macOS this installs the Xcode Command Line Tools (confirm the dialog) and
-Homebrew first. On a server without git, the repository is downloaded as a
-tarball and turned into a git checkout once git is installed. Either way it
-ends up at `~/.dotfiles` — the location is fixed, because the shell and tmux
-config refer to it — and `bin/dotfiles` runs.
-
-To install your fork, set `DOTFILES_REMOTE` (and `DOTFILES_BRANCH`):
-
-```sh
-curl -fsSL …/install.sh | DOTFILES_REMOTE=https://github.com/you/dotfiles.git sh
-```
-
-Arguments after `sh -s --` are passed on to `bin/dotfiles`, e.g.
-`curl -fsSL …/install.sh | sh -s -- --yes`.
-
-### A new Mac, step by step
+<details>
+<summary><b>A new Mac, step by step</b></summary>
 
 1. **Sign in to the App Store.** Xcode, Keynote, Numbers and Pages are installed
    through it (`mas`); without a sign-in `brew bundle` reports those four as
@@ -48,25 +34,51 @@ Arguments after `sh -s --` are passed on to `bin/dotfiles`, e.g.
      Kubernetes credentials (`~/.kube/config`);
    - VS Code: Accounts → Backup and Sync Settings… (see [VS Code](#vs-code));
    - the keys in `~/.config/dotfiles/secrets.env`, which is never backed up —
-     for me `GITHUB_PAT`, `CONTEXT7_API_KEY` and `CGC_API_KEY` (see
+     for me `GITHUB_PAT` and `CONTEXT7_API_KEY` (see
      [Secrets](#secrets));
    - grant the terminal Full Disk Access and re-run `dotfiles` if you want the
      Safari settings in `bin/_macos` to apply;
    - log out and back in: some macOS defaults only apply then.
 
-### Only the Claude Code part
+</details>
 
-The env guard, skills and agents are a Claude Code plugin, `dotfiles`, in the
-`ezintz` marketplace this repository provides:
+<details>
+<summary><b>What the installer does, forks and arguments</b></summary>
+
+On macOS this installs the Xcode Command Line Tools (confirm the dialog) and
+Homebrew first. On a server without git, the repository is downloaded as a
+tarball and turned into a git checkout once git is installed. Either way it
+ends up at `~/.dotfiles` — the location is fixed, because the shell and tmux
+config refer to it — and `bin/dotfiles` runs.
+
+To install your fork, set `DOTFILES_REMOTE` (and `DOTFILES_BRANCH`):
 
 ```sh
-claude plugin marketplace add ezintz/dotfiles
+curl -fsSL …/install.sh | DOTFILES_REMOTE=https://github.com/you/dotfiles.git sh
+```
+
+Arguments after `sh -s --` are passed on to `bin/dotfiles`, e.g.
+`curl -fsSL …/install.sh | sh -s -- --yes`.
+
+</details>
+
+<details>
+<summary><b>Only the Claude Code part</b></summary>
+
+The env guard, skills and agents are a Claude Code plugin, `dotfiles`, in its own
+repository, [ezintz/dotfiles-claude-plugin](https://github.com/ezintz/dotfiles-claude-plugin),
+which is also its marketplace:
+
+```sh
+claude plugin marketplace add ezintz/dotfiles-claude-plugin
 claude plugin install dotfiles@ezintz
 ```
 
 That is the guard, skills and agents only. The global instructions, rules,
 settings and the other plugins listed in `claude/settings.json` come with the
 full install above; a plugin cannot carry them.
+
+</details>
 
 ## Usage
 
@@ -162,12 +174,15 @@ host's file. Keys are never part of this repository.
 `claude/` holds the global (`~/.claude/`) [Claude Code](https://claude.ai/code)
 setup:
 
-- **`claude/plugin/`** is a standard Claude Code plugin, `dotfiles`: a
+- **`claude/plugin/`** is a standard Claude Code plugin, `dotfiles`, kept in
+  its own repository ([ezintz/dotfiles-claude-plugin](https://github.com/ezintz/dotfiles-claude-plugin))
+  and included here as a submodule: a
   `PreToolUse` env guard that makes destructive commands aimed at a non-local
   target ask first (kubectl, helm, terraform/tofu, argocd, gh, glab, git, mysql,
   psql, …), plus review, debugging and authoring skills (`/dotfiles:<name>`)
   and agents. With this checkout it is linked to `~/.claude/skills/dotfiles` and
-  loaded in place, so edits here apply in the next session.
+  loaded in place, so edits here apply in the next session; they are
+  committed in the submodule, like prezto.
 - **Next to it**, what a plugin cannot carry: the global instructions
   (`global-instructions.md` → `~/.claude/CLAUDE.md`), rules, the statusline, the
   theme, and `settings.json`, which is merged into `~/.claude/settings.json` —

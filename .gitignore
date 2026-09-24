@@ -1,23 +1,6 @@
 .DS_Store?
 *.local
 bin/phpstorm
-claude/plugin/skills/*-workspace/
-
-# Not-yet-ready skills/refs/agents: loaded on this machine (the plugin is
-# linked in place, tracked or not) but never published with it.
-claude/plugin/skills/code-review/
-claude/plugin/skills/code-review-and-quality/
-claude/plugin/skills/git-diff/
-claude/plugin/skills/performance-optimization/
-claude/plugin/skills/security-and-hardening/
-claude/plugin/refs/*
-## Graduated: three skills link it, so it has to travel with them.
-!claude/plugin/refs/knowledge-placement.md
-claude/plugin/agents/
-
-# Byte-compiled cache from the skills' Python helpers, which import each other.
-__pycache__/
-
 # SSH host files moved to the private overlay; a stray one left in the old
 # location must never be committed to this public repository.
 ssh/config.d/

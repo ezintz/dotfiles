@@ -6,8 +6,8 @@
     "name": "Eduard Zintz",
     "url": "https://github.com/ezintz"
   },
-  "homepage": "https://github.com/ezintz/dotfiles/tree/main/claude/plugin",
-  "repository": "https://github.com/ezintz/dotfiles",
+  "homepage": "https://github.com/ezintz/dotfiles-claude-plugin",
+  "repository": "https://github.com/ezintz/dotfiles-claude-plugin",
   "license": "WTFPL",
   "keywords": [
     "guardrails",

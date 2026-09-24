@@ -41,8 +41,10 @@ Project memory is the one that sits outside that shape, as `./CLAUDE.md` against
 checkout, so a user-level write never appears in the current project's
 `git status` and needs `git -C`. Two deployed names differ from the tracked
 ones: `~/.claude/CLAUDE.md` is `claude/global-instructions.md`, and the skills,
-agents, refs and hooks of the `dotfiles` plugin live in `claude/plugin/`, linked
-as a whole to `~/.claude/skills/dotfiles`.
+agents, refs and hooks of the `dotfiles` plugin live in `claude/plugin/` — a
+submodule, its own repository (`ezintz/dotfiles-claude-plugin`), so a change
+there is committed with `git -C ~/.dotfiles/claude/plugin` — linked as a whole
+to `~/.claude/skills/dotfiles`.
 
 ## Before writing anything
 

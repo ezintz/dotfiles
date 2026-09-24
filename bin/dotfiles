@@ -117,6 +117,23 @@ main() {
   [ -n "$no_overlay" ] || backup_overlay
 }
 
+# prezto and the Claude Code plugin are repositories of their own that get
+# committed to from inside this checkout. A plain `submodule update` would
+# detach them from their branch, stranding the next commit made there, so one
+# that is on a branch is fast-forwarded instead; its branch is where every
+# recorded commit came from, so that never lands behind the recorded one.
+sync_own_submodule() {
+  _sub="${DOTFILES_DIRECTORY}/$1"
+  if [ ! -e "${_sub}/.git" ]; then
+    run git -C "$DOTFILES_DIRECTORY" submodule update --init --recursive "$1"
+  elif git -C "$_sub" symbolic-ref -q HEAD >/dev/null; then
+    run git -C "$_sub" pull --ff-only -q ||
+      print_warning "Could not fast-forward $1; it has local commits or changes"
+  else
+    run git -C "$DOTFILES_DIRECTORY" submodule update --recursive "$1"
+  fi
+}
+
 sync_repositories() {
   if [ ! -d "${DOTFILES_DIRECTORY}/.git" ]; then
     print_notice "Not a git checkout (installed from a tarball); skipped synchronization."
@@ -127,12 +144,8 @@ sync_repositories() {
   run git -C "$DOTFILES_DIRECTORY" pull --rebase --autostash ||
     print_warning "git pull failed; continuing with the current checkout"
   run git -C "$DOTFILES_DIRECTORY" submodule sync --recursive
-  ## Only initialise prezto, never update it: a blanket `update` would detach
-  ## prezto from its branch whenever it carries commits the superproject has
-  ## not recorded yet.
-  if [ ! -e "${DOTFILES_DIRECTORY}/prezto/.git" ]; then
-    run git -C "$DOTFILES_DIRECTORY" submodule update --init --recursive prezto
-  fi
+  sync_own_submodule prezto
+  sync_own_submodule claude/plugin
   run git -C "$DOTFILES_DIRECTORY" submodule update --init tmux/plugins/tmux-resurrect
   if [ -d "${DOTFILES_LOCAL_DIRECTORY}/.git" ]; then
     print_notice "Syncing private dotfiles overlay ..."

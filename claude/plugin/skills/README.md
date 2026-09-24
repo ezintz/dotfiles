@@ -1,23 +1,25 @@
 # Skills
 
-These skills ship in the `dotfiles` Claude Code plugin (`claude/plugin/`), so
+These skills ship in the `dotfiles` Claude Code plugin
+([ezintz/dotfiles-claude-plugin](https://github.com/ezintz/dotfiles-claude-plugin),
+checked out as the submodule `~/.dotfiles/claude/plugin`), so
 they are namespaced: `debugging` is invoked as `/dotfiles:debugging`. On a
-machine with this checkout, `bin/dotfiles` links the whole plugin to
+machine with the dotfiles checkout, `bin/dotfiles` links the whole plugin to
 `~/.claude/skills/dotfiles`, where Claude Code loads it in place as
 `dotfiles@skills-dir` and an edit here is live in the next session. Elsewhere
 it is installed from the `ezintz` marketplace:
-`claude plugin marketplace add ezintz/dotfiles && claude plugin install dotfiles@ezintz`.
+`claude plugin marketplace add ezintz/dotfiles-claude-plugin && claude plugin install dotfiles@ezintz`.
 
 There are three places a skill can live:
 
 | Tier    | Lives in                                      | Shared how                           |
 | ------- | --------------------------------------------- | ------------------------------------ |
-| public  | `~/.dotfiles/claude/plugin/skills/<name>/`    | in the plugin, pushed to `ezintz/dotfiles` (public) |
+| public  | `~/.dotfiles/claude/plugin/skills/<name>/`    | in the plugin, pushed to `ezintz/dotfiles-claude-plugin` (public) |
 | private | `~/.config/dotfiles/claude/skills/<name>/`    | private overlay repo; linked one by one into `~/.claude/skills` |
 | local   | `~/.claude/skills/<name>/` (a real dir)       | nowhere — this machine only          |
 
-A skill directory that is listed in `.gitignore` here is still loaded from
-this checkout, but never reaches anyone installing the plugin from GitHub.
+A skill directory that is listed in the plugin's `.gitignore` is still loaded
+from the checkout, but never reaches anyone installing the plugin from GitHub.
 
 **This repository is public.** Anything placed here is world-readable once pushed.
 Keep employer-internal detail — hostnames, project keys, customer names, internal
@@ -30,6 +32,10 @@ Public (in the plugin):
 ```sh
 mv ~/.claude/skills/<name> ~/.dotfiles/claude/plugin/skills/<name>
 ```
+
+Then commit and push it in the plugin repository (`git -C ~/.dotfiles/claude/plugin`),
+bump `version` in `.claude-plugin/plugin.json`, and commit the new submodule
+pointer in the dotfiles repository.
 
 Private (needs the overlay `~/.config/dotfiles` — ideally a private repo):
 
