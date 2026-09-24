@@ -118,20 +118,29 @@ main() {
 }
 
 # prezto and the Claude Code plugin are repositories of their own that get
-# committed to from inside this checkout. A plain `submodule update` would
-# detach them from their branch, stranding the next commit made there, so one
-# that is on a branch is fast-forwarded instead; its branch is where every
-# recorded commit came from, so that never lands behind the recorded one.
+# committed to from inside this checkout, so they are kept on their branch: a
+# detached one strands the next commit made there. A clone always leaves them
+# detached, so a detached one is moved onto its branch when the recorded commit
+# is already on it; one on a branch is fast-forwarded. Either way it never
+# lands behind the recorded commit, since every recorded commit came from that
+# branch.
 sync_own_submodule() {
   _sub="${DOTFILES_DIRECTORY}/$1"
+  _branch=$(git -C "$DOTFILES_DIRECTORY" config -f .gitmodules "submodule.$1.branch" || echo main)
   if [ ! -e "${_sub}/.git" ]; then
     run git -C "$DOTFILES_DIRECTORY" submodule update --init --recursive "$1"
-  elif git -C "$_sub" symbolic-ref -q HEAD >/dev/null; then
-    run git -C "$_sub" pull --ff-only -q ||
-      print_warning "Could not fast-forward $1; it has local commits or changes"
-  else
-    run git -C "$DOTFILES_DIRECTORY" submodule update --recursive "$1"
   fi
+  if ! git -C "$_sub" symbolic-ref -q HEAD >/dev/null; then
+    run git -C "$_sub" fetch -q origin "$_branch" &&
+      if git -C "$_sub" merge-base --is-ancestor HEAD "origin/${_branch}" 2>/dev/null; then
+        run git -C "$_sub" checkout -q -B "$_branch" "origin/${_branch}"
+      else
+        print_warning "$1 is detached at a commit that is not on origin/${_branch}; left as is"
+      fi
+    return 0
+  fi
+  run git -C "$_sub" pull --ff-only -q ||
+    print_warning "Could not fast-forward $1; it has local commits or changes"
 }
 
 sync_repositories() {
