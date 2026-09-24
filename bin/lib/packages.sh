@@ -23,10 +23,12 @@ install_brew_packages() {
   run brew cleanup
 }
 
+## --verbose passes through each install's own output (download progress,
+## a .pkg's password prompt); without it a long download looks like a hang.
 brew_bundle() {
   [ -f "$1" ] || return 0
   run env HOMEBREW_CASK_OPTS="--adopt ${HOMEBREW_CASK_OPTS:-}" \
-    brew bundle install --file "$1" ||
+    brew bundle install --verbose --file "$1" ||
     print_warning "brew bundle reported failures for $1"
 }
 
