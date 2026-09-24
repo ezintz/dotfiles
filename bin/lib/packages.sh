@@ -44,9 +44,6 @@ install_overlay_packages() {
 
 # The minimum for the shell, git and the Claude Code guard on a server:
 # packages/linux.txt, installed with whichever package manager is present.
-# On apt and apk they hang off one virtual package, `dotfiles`, so dropping a
-# name from the list lets the package manager remove it again instead of it
-# staying installed forever, and removing `dotfiles` undoes the whole list.
 # $_sudo and $_list are unquoted on purpose: an empty $_sudo must vanish and
 # $_list must split into one argument per package.
 # shellcheck disable=SC2086
@@ -63,13 +60,12 @@ install_linux_packages() {
 
   print_header "Installing packages: ${_list}"
   if has apt-get; then
-    install_apt_metapackage
+    run $_sudo apt-get update -q &&
+      run $_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q $_list
   elif has dnf; then
     run $_sudo dnf install -y $_list
   elif has apk; then
-    # apk is declarative: re-adding the virtual package with a shorter list
-    # removes what was dropped, unless something else still needs it.
-    run $_sudo apk add --no-cache --virtual dotfiles $_list
+    run $_sudo apk add --no-cache $_list
   elif has pacman; then
     # -Syu, not -Sy: Arch does not support partial upgrades, and -Sy <pkg> can
     # install a package built against libraries newer than the system's.
@@ -78,40 +74,6 @@ install_linux_packages() {
     print_warning "No supported package manager (apt, dnf, apk, pacman); install these yourself: ${_list}"
     return 0
   fi || print_warning "Installing packages failed; install these yourself: ${_list}"
-}
-
-# apt has no --virtual, so build the metapackage: a .deb that is nothing but
-# a control file whose Depends is the list. dpkg-deb comes with dpkg, so no
-# tool or repository is needed. apt skips a version it already has, so the
-# version moves only when the list does, and an unchanged list is left alone.
-# Afterwards `apt-get autoremove` takes out a package dropped from the list.
-# shellcheck disable=SC2086
-install_apt_metapackage() {
-  _depends=$(printf '%s\n' $_list | paste -sd, - | sed 's/,/, /g')
-  if [ "$(dpkg-query -W -f '${Depends}' dotfiles 2>/dev/null)" = "$_depends" ]; then
-    return 0
-  fi
-  _version=$(dpkg-query -W -f '${Version}' dotfiles 2>/dev/null) || _version=0
-  _version=$((${_version:-0} + 1))
-  _build=$(mktemp -d) || return 1
-  ## World-readable, or apt's sandbox user cannot open the .deb and says so.
-  chmod 755 "$_build"
-  mkdir "$_build/dotfiles" "$_build/dotfiles/DEBIAN"
-  cat >"$_build/dotfiles/DEBIAN/control" <<EOC
-Package: dotfiles
-Version: ${_version}
-Architecture: all
-Maintainer: dotfiles <root@localhost>
-Depends: ${_depends}
-Description: Packages the dotfiles need on this server
- Built by bin/dotfiles from packages/linux.txt.
-EOC
-  dpkg-deb --build --root-owner-group "$_build/dotfiles" "$_build/dotfiles.deb" >/dev/null &&
-    run $_sudo apt-get update -q &&
-    run $_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q "$_build/dotfiles.deb"
-  _status=$?
-  rm -rf "$_build"
-  return $_status
 }
 
 install_packages() {
