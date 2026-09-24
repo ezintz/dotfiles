@@ -94,6 +94,14 @@ if [ -n "$from_tarball" ]; then
     git -C "$DOTFILES_DIRECTORY" reset -q "origin/${DOTFILES_BRANCH}"
     git -C "$DOTFILES_DIRECTORY" branch -q --set-upstream-to "origin/${DOTFILES_BRANCH}"
     git -C "$DOTFILES_DIRECTORY" submodule update --init --recursive
+    # The submodules committed to from here come out detached; bin/dotfiles
+    # (sync_own_submodule) would attach them, but it already ran on the tarball.
+    for _sub in prezto claude/plugin; do
+      _branch=$(git -C "$DOTFILES_DIRECTORY" config -f .gitmodules "submodule.${_sub}.branch" || echo main)
+      if git -C "${DOTFILES_DIRECTORY}/${_sub}" merge-base --is-ancestor HEAD "origin/${_branch}" 2>/dev/null; then
+        git -C "${DOTFILES_DIRECTORY}/${_sub}" checkout -q -B "$_branch" "origin/${_branch}"
+      fi
+    done
   else
     say "! git is still missing, so ~/.dotfiles is a plain copy without prezto."
     say "  Install git and re-run this script's clone step, or clone ${DOTFILES_REMOTE} yourself."
