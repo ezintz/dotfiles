@@ -65,10 +65,13 @@ install_linux_packages() {
   elif has apk; then
     run $_sudo apk add --no-cache $_list
   elif has pacman; then
-    run $_sudo pacman -Sy --needed --noconfirm $_list
+    # -Syu, not -Sy: Arch does not support partial upgrades, and -Sy <pkg> can
+    # install a package built against libraries newer than the system's.
+    run $_sudo pacman -Syu --needed --noconfirm $_list
   else
     print_warning "No supported package manager (apt, dnf, apk, pacman); install these yourself: ${_list}"
-  fi
+    return 0
+  fi || print_warning "Installing packages failed; install these yourself: ${_list}"
 }
 
 install_packages() {
