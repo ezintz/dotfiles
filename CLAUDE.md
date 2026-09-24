@@ -19,7 +19,7 @@ bin/dotfiles --no-sync           # skip git pull
 bin/dotfiles --no-links          # skip symlinks and the git identity prompt
 bin/dotfiles --no-configuration  # skip macOS defaults
 bin/dotfiles --no-overlay        # skip creating/restoring and backing up the overlay repo
-bin/dotfiles --yes               # answer every prompt except "restart now?" and pushes
+bin/dotfiles --yes               # answer every prompt except "restart now?", the Launchpad reset and pushes
 bin/dotfiles --dry-run           # print what would change
 ```
 
@@ -33,14 +33,20 @@ uv run --with shellcheck-py shellcheck -s sh -x -P bin/lib install.sh bin/dotfil
 
 and exercise the Linux path in a container: copy the checkout to `/root/.dotfiles` in `debian:stable-slim` and `alpine` and run `sh /root/.dotfiles/install.sh --yes --no-sync`.
 
-The one test suite is `claude/plugin/tests/guards.bats`, which pins
-the behaviour of the Claude Code env guards:
+There are two test suites, both bats (bats-core is in the Brewfile):
 
 ```bash
-bats claude/plugin/tests/guards.bats   # bats-core is in the Brewfile
+bats claude/plugin/tests/guards.bats   # the Claude Code env guards
+bats tests/macos.bats                  # bin/lib/macos.sh, macOS only
 ```
 
-Run it after any change under `claude/plugin/hooks/`.
+Run the first after any change under `claude/plugin/hooks/`, the second after
+any change to `bin/lib/macos.sh` or to how `bin/_macos` calls it. `tests/macos.bats`
+writes only to a scratch plist under `$BATS_TEST_TMPDIR`; the handful of cases
+that touch real domains read the machine's current value and assert that writing
+it back is skipped, so the suite never changes a setting. Two of its cases cannot
+use the scratch plist and say so in place: `-currentHost` against a file path is
+refused by `defaults` outright, and `pmset` has no scratch equivalent at all.
 
 Most cases are behavioural (this command passes, that one asks). The last three
 are different: they scrape `kubectl`/`helm`/`tofu --help` for the tool's real
@@ -90,7 +96,19 @@ The overlay's `zprofile` and then its `secrets.env` are sourced at the end of `z
 
 ### macOS System Defaults
 
-`bin/_macos` is a standalone script (~850 lines) that sets macOS defaults for Dock, Finder, Safari, etc. `bin/dotfiles` runs it as `sh bin/_macos` in its own process, never sources it, so it is POSIX sh like the rest.
+`bin/_macos` is a standalone script (~880 lines) that sets macOS defaults for Dock, Finder, Safari, etc. `bin/dotfiles` runs it as `sh bin/_macos` in its own process, never sources it, so it is POSIX sh like the rest.
+
+**Nothing in it writes a setting that is already in place.** Every write goes through a helper in `bin/lib/macos.sh` (`set_default`, `set_default_currenthost`, `set_default_merged`, `set_pmset`, `set_nohidden`, `set_default_app`) that reads the current value first and returns non-zero without acting when it matches; only a real change calls `macos_changed`, which prints the setting and bumps `MACOS_CHANGES`. A new setting added as a bare `defaults write` therefore reapplies on every run — which is not merely wasteful, because three things downstream are gated on that counter: the Dock/Finder/SystemUIServer restarts and the "quit running apps" prompt at the bottom of the file, the Spotlight **reindex** (`mdutil -E`, hours of CPU, previously unconditional on every run), and the Stats relaunch. A helper that reports a phantom change blanks the desktop and rebuilds the Spotlight index every time `bin/dotfiles` runs.
+
+Three comparisons are less obvious than they look, and each is pinned by a case in `tests/macos.bats`. `defaults read` prints a boolean as `1`, never as the `true` that `defaults write` takes, so comparing the argument as written would rewrite all 130 booleans every run. `-currentHost` is a different store (`~/Library/Preferences/ByHost`) and the flag has to be on the *read* as much as on the write — `com.apple.ImageCapture disableHotPlug` exists only there, so a read without the flag finds nothing and rewrites forever. And `-array`/`-dict`/`-dict-add` merge with what is already stored, so their result cannot be predicted from the arguments: `set_default_merged` writes first and compares the value before against the value after. `set_pmset` has the inverse problem — `lidwake` and `autorestart` are absent from `pmset -g custom` on Apple silicon, so the write cannot be confirmed and is deliberately *not* counted, since nothing reads a power setting that needs an app restart anyway.
+
+**Whether a logout is needed is now answered, not warned about.** The file used to end with "some of these changes require a logout/restart" and a `Restart now?` prompt every single time. Almost nothing needs one: the app that reads a given setting is restarted at the bottom of the file. The exceptions are the settings whose consumer is WindowServer or loginwindow, which read them once at login — the trackpad and mouse keys, keyboard repeat and access, and the zoom accessibility settings. Those three sections save `MACOS_CHANGES` before themselves and call `logout_if_changed` after, which appends a name to `MACOS_LOGOUT_FOR` only if something moved. An empty list at the end prints "no logout needed" and exits without asking. Adding a setting to one of those three sections is free; adding one elsewhere that turns out to need a logout means wrapping it the same way.
+
+The one thing that cannot be made conditional is the Launchpad reset: the database holds an arrangement rather than a setting, so there is no "already in place" to compare against. It now goes through `ask` rather than `confirm` — `--yes` answers the routine questions, and discarding the icon layout on every unattended run is not one of them. `lsregister -kill -r` is likewise an unconditional rebuild with no state to read; it is cheap enough to have been left alone.
+
+Spotlight's exclusion of `~/Workspace` is a `.metadata_never_index` marker file, not `mdutil -i off`. mdutil takes **mount points**, and `~/Workspace` is a directory on the data volume, so the mdutil form failed silently with "unknown indexing state" for as long as it was in the file — the directory was indexed the whole time. Anything else here that wants a per-directory exclusion needs the marker too.
+
+`bin/_macos` is also where a third-party app's settings are shared when the app offers no better hook. iTerm2 can be pointed at a tracked preferences folder and cmux/ghostty read symlinked config files, but Stats can do neither — it has no custom-prefs-folder setting, and cfprefsd replaces a symlinked plist with a regular file — so its settings are `defaults write` lines in `bin/_macos`. That means picking which keys are shared: the module/widget/colour choices are, while menu bar x-coordinates, window frames, `remote_id` and updater timestamps stay per-machine. An app whose preferences are re-read only at launch needs a relaunch after the writes; Stats gets one, guarded on it already running so a machine where it was deliberately quit does not have it started.
 
 ### Git Submodules
 
