@@ -17,6 +17,7 @@
     }
   },
   "enabledPlugins": {
+    "context7@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "playwright@claude-plugins-official": false,
     "claude-md-management@claude-plugins-official": true,

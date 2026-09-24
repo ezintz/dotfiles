@@ -60,6 +60,7 @@ mirror_private_skills() {
 # had added to ~/.claude/settings.json on each run. The price of the union is
 # that deleting an array entry here does not delete it there — that takes an
 # explicit migration, like prune_legacy_hook below.
+# shellcheck disable=SC2016 # a jq program: $vars are jq's, not the shell's
 MERGE_JQ='
 def union($a; $b):
   if ($a|type) == "object" and ($b|type) == "object" then
@@ -122,9 +123,64 @@ prune_legacy_hook() {
     | if (.hooks.PreToolUse | length) == 0 then del(.hooks.PreToolUse) else . end' "$_settings"
 }
 
+# The retired claude/bootstrap.sh *copied* the guard into ~/.claude/hooks
+# instead of linking it, so prune_claude_links never sees those copies. Left
+# behind, a stale guard keeps running from there and never updates. Matched by
+# content, not just name, so an unrelated file that happens to share a name
+# survives.
+prune_legacy_hook_copies() {
+  _hooks="${HOME}/.claude/hooks"
+  for _f in env-guard.sh guard-lib.sh kubectl-env-guard.sh terraform-env-guard.sh openstack-env-guard.sh argocd-env-guard.sh; do
+    [ -f "${_hooks}/${_f}" ] && [ ! -L "${_hooks}/${_f}" ] || continue
+    grep -q 'guard' "${_hooks}/${_f}" 2>/dev/null || continue
+    print_notice "Removing copied legacy hook ~/.claude/hooks/${_f}"
+    run rm -f "${_hooks}/${_f}"
+  done
+  if [ -d "${_hooks}/guards" ] && [ ! -L "${_hooks}/guards" ] && [ -f "${_hooks}/guards/kubectl.guard" ]; then
+    print_notice "Removing copied legacy hook profiles ~/.claude/hooks/guards/"
+    run rm -rf "${_hooks}/guards"
+  fi
+}
+
+# Every plugin set to true in `enabledPlugins` — tracked settings.json plus the
+# private overlay's — is installed. That key is already the list, so there is
+# no second one to drift from it. A fresh machine does not know any
+# marketplace yet and `plugin install` then fails with "not found", so every
+# marketplace in `extraKnownMarketplaces` is added first. Both commands are
+# no-ops when already done. Additive, like the Brewfile: a plugin installed by
+# hand and not listed stays.
+install_claude_plugins() {
+  if ! has claude; then
+    print_notice "claude is not installed yet; skipping Claude Code plugins"
+    return 0
+  fi
+  has jq || return 0
+  _settings=$(for _f in "${DOTFILES_DIRECTORY}/claude/settings.json" "${DOTFILES_LOCAL_DIRECTORY}/claude/settings.json"; do
+    [ -f "$_f" ] && printf '%s\n' "$_f"
+  done)
+  [ -n "$_settings" ] || return 0
+
+  print_header "Installing Claude Code plugins ..."
+  # One marketplace per line: <name> <source for `marketplace add`>.
+  # shellcheck disable=SC2086 # one file per line, no spaces in these paths
+  jq -rs '[.[].extraKnownMarketplaces // {} | to_entries[]] | unique_by(.key)[]
+          | "\(.key) \(.value.source | .repo // .url // .path // empty)"' $_settings |
+  while read -r _name _source; do
+    [ -n "$_source" ] || continue
+    run_quiet claude plugin marketplace add "$_source" ||
+      print_warning "Could not add Claude Code marketplace ${_name} (${_source})"
+  done
+  # shellcheck disable=SC2086
+  for _plugin in $(jq -rs '[.[].enabledPlugins // {} | to_entries[] | select(.value == true) | .key] | unique[]' $_settings); do
+    run_quiet claude plugin install "$_plugin" ||
+      print_warning "Could not install Claude Code plugin ${_plugin}"
+  done
+}
+
 setup_claude() {
   prune_claude_links
   prune_legacy_hook
+  prune_legacy_hook_copies
 
   ## Named differently from the symlink target so Claude Code's in-repo
   ## CLAUDE.md auto-discovery doesn't also load it a second time as a
@@ -147,6 +203,10 @@ setup_claude() {
   ## (auto permission mode, skipped safety prompts) live in the private overlay.
   merge_json "${DOTFILES_LOCAL_DIRECTORY}/claude/settings.json" ".claude/settings.json"
   ## User-scope MCP servers live in ~/.claude.json (top-level mcpServers).
-  ## Secrets are referenced as ${VAR} and exported from ~/.zprofile.local.
+  ## Keys are never written here: servers read them from the environment,
+  ## exported by the overlay's secrets.env (see migrate_overlay_secrets).
   merge_json "${DOTFILES_DIRECTORY}/claude/mcp.json" ".claude.json"
+  ## Servers with local paths or keys (CodeGraphContext) stay private.
+  merge_json "${DOTFILES_LOCAL_DIRECTORY}/claude/mcp.json" ".claude.json"
+  install_claude_plugins
 }

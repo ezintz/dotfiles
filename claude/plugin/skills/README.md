@@ -5,14 +5,15 @@ they are namespaced: `debugging` is invoked as `/dotfiles:debugging`. On a
 machine with this checkout, `bin/dotfiles` links the whole plugin to
 `~/.claude/skills/dotfiles`, where Claude Code loads it in place as
 `dotfiles@skills-dir` and an edit here is live in the next session. Elsewhere
-it is installed from the `ezintz` marketplace (`claude/bootstrap.sh`).
+it is installed from the `ezintz` marketplace:
+`claude plugin marketplace add ezintz/dotfiles && claude plugin install dotfiles@ezintz`.
 
 There are three places a skill can live:
 
 | Tier    | Lives in                                      | Shared how                           |
 | ------- | --------------------------------------------- | ------------------------------------ |
 | public  | `~/.dotfiles/claude/plugin/skills/<name>/`    | in the plugin, pushed to `ezintz/dotfiles` (public) |
-| private | `~/.dotfiles-private/claude/skills/<name>/`   | private overlay repo; linked one by one into `~/.claude/skills` |
+| private | `~/.config/dotfiles/claude/skills/<name>/`    | private overlay repo; linked one by one into `~/.claude/skills` |
 | local   | `~/.claude/skills/<name>/` (a real dir)       | nowhere — this machine only          |
 
 A skill directory that is listed in `.gitignore` here is still loaded from
@@ -30,11 +31,11 @@ Public (in the plugin):
 mv ~/.claude/skills/<name> ~/.dotfiles/claude/plugin/skills/<name>
 ```
 
-Private (needs `~/.dotfiles-private` — clone it as a private repo first):
+Private (needs the overlay `~/.config/dotfiles` — ideally a private repo):
 
 ```sh
-mkdir -p ~/.dotfiles-private/claude/skills
-mv ~/.claude/skills/<name> ~/.dotfiles-private/claude/skills/<name>
+mkdir -p ~/.config/dotfiles/claude/skills
+mv ~/.claude/skills/<name> ~/.config/dotfiles/claude/skills/<name>
 dotfiles --no-packages --no-sync --no-configuration   # links it back
 ```
 

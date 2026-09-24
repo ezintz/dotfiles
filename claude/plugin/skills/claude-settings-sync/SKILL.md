@@ -13,7 +13,7 @@ allowed-tools:
 by `merge_json` in `bin/lib/claude.sh` (tracked keys win on conflict; keys that
 exist **only** in the live file are left alone; arrays such as `permissions.ask`
 are unioned, so an entry deleted from the tracked file stays in the live one
-until removed by hand). `~/.dotfiles-private/claude/settings.json` is merged
+until removed by hand). `~/.config/dotfiles/claude/settings.json` is merged
 right after it, for values that are personal rather than public. Over time the live file drifts ahead
 of the tracked one — a setting gets changed interactively, or Claude Code adds
 a new key nobody committed. This skill finds that drift and helps decide, key
@@ -84,7 +84,7 @@ If a value looks sync-worthy in shape but contains something sensitive (a
 token embedded in a command string, an internal hostname in a URL), don't
 silently classify it machine-local and drop it — flag the conflict
 explicitly: "this looks like a preference but the value itself isn't safe to
-publish; consider `~/.dotfiles-private/claude/settings.json` instead", the
+publish; consider `~/.config/dotfiles/claude/settings.json` instead", the
 private overlay `bin/dotfiles` merges after the tracked file. The same file is
 the home for a setting that is safe to publish but should not be forced on
 someone forking the repo, like `permissions.defaultMode` or the `skip*Prompt`
