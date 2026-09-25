@@ -29,6 +29,27 @@ sudo -v
 while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
 ##
+## Touch ID for sudo
+##
+
+## In sudo_local, which macOS includes from /etc/pam.d/sudo and leaves alone on
+## updates (sudo itself is reset). pam_tid alone does not work inside tmux —
+## where every cmux tab runs — because tmux's server is outside the GUI login
+## session; pam_reattach (from the Brewfile) moves the check back into it.
+## ignore_ssh: over SSH there is no finger to ask, so it falls back to the password.
+pam_reattach="$(brew --prefix 2>/dev/null)/lib/pam/pam_reattach.so"
+sudo_local=$(
+  printf '# sudo_local: local config file which survives system update and is included for sudo\n'
+  printf '# Written by ~/.dotfiles/bin/_macos: Touch ID for sudo, also inside tmux.\n'
+  [ -f "$pam_reattach" ] && printf 'auth       optional       %s ignore_ssh\n' "$pam_reattach"
+  printf 'auth       sufficient     pam_tid.so\n'
+)
+if [ "$(cat /etc/pam.d/sudo_local 2>/dev/null)" != "$sudo_local" ]; then
+  printf '%s\n' "$sudo_local" | sudo tee /etc/pam.d/sudo_local >/dev/null &&
+    sudo chmod 444 /etc/pam.d/sudo_local && sudo chown root:wheel /etc/pam.d/sudo_local
+fi
+
+##
 ## General UI/UX
 ##
 

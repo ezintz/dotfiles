@@ -59,6 +59,7 @@ brew "telnet"
 brew "cliclick"
 brew "duti"
 brew "mas"
+brew "pam-reattach"  # Touch ID for sudo inside tmux (bin/_macos)
 
 # Tests (claude/plugin/tests/guards.bats)
 brew "bats-core"
