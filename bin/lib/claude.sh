@@ -79,6 +79,12 @@ merge_json() {
     print_warning "jq not found; skipping the merge of ${_src#"$HOME"/} into ~/$2"
     return 0
   fi
+  ## A merge that would change nothing is not written, and says nothing, so
+  ## bin/dotfiles can tell from a dry run whether the links step has work.
+  if [ -f "$_dest" ] && [ ! -L "$_dest" ] &&
+     jq -e -s "(${MERGE_JQ}) == .[0]" "$_dest" "$_src" >/dev/null 2>&1; then
+    return 0
+  fi
   if [ -n "${DOTFILES_DRY_RUN:-}" ]; then
     printf '  would merge: %s -> ~/%s\n' "$_src" "$2"
     return 0
@@ -146,12 +152,15 @@ prune_legacy_hook_copies() {
 # private overlay's — is installed. That key is already the list, so there is
 # no second one to drift from it. A fresh machine does not know any
 # marketplace yet and `plugin install` then fails with "not found", so every
-# marketplace in `extraKnownMarketplaces` is added first. Both commands are
-# no-ops when already done. Additive, like the Brewfile: a plugin installed by
-# hand and not listed stays.
+# marketplace in `extraKnownMarketplaces` is added first. Only what is missing
+# is added: each `claude` call takes about a second even when it has nothing to
+# do. Additive, like the Brewfile: a plugin installed by hand and not listed
+# stays.
 install_claude_plugins() {
   if ! has claude; then
-    print_notice "claude is not installed yet; skipping Claude Code plugins"
+    ## Not under the dry run bin/dotfiles checks for drift with: nothing here
+    ## could fix it, so a server without claude would be asked every run.
+    [ -n "${DOTFILES_DRY_RUN:-}" ] || print_notice "claude is not installed yet; skipping Claude Code plugins"
     return 0
   fi
   has jq || return 0
@@ -160,18 +169,26 @@ install_claude_plugins() {
   done)
   [ -n "$_settings" ] || return 0
 
-  print_header "Installing Claude Code plugins ..."
+  _have_markets=$(claude plugin marketplace list --json 2>/dev/null | jq -c '[.[].name]' 2>/dev/null) || _have_markets='[]'
+  _have_plugins=$(claude plugin list --json 2>/dev/null | jq -c '[.[].id]' 2>/dev/null) || _have_plugins='[]'
   # One marketplace per line: <name> <source for `marketplace add`>.
   # shellcheck disable=SC2086 # one file per line, no spaces in these paths
-  jq -rs '[.[].extraKnownMarketplaces // {} | to_entries[]] | unique_by(.key)[]
-          | "\(.key) \(.value.source | .repo // .url // .path // empty)"' $_settings |
+  _markets=$(jq -rs --argjson have "${_have_markets:-[]}" '[.[].extraKnownMarketplaces // {} | to_entries[]] | unique_by(.key)[]
+          | select(.key as $k | $have | index($k) | not)
+          | "\(.key) \(.value.source | .repo // .url // .path // empty)"' $_settings)
+  # shellcheck disable=SC2086
+  _plugins=$(jq -rs --argjson have "${_have_plugins:-[]}" '[.[].enabledPlugins // {} | to_entries[] | select(.value == true) | .key] | unique[]
+          | select(. as $p | $have | index($p) | not)' $_settings)
+  [ -n "${_markets}${_plugins}" ] || return 0
+
+  print_header "Installing Claude Code plugins ..."
+  [ -z "$_markets" ] || printf '%s\n' "$_markets" |
   while read -r _name _source; do
     [ -n "$_source" ] || continue
     run_quiet claude plugin marketplace add "$_source" ||
       print_warning "Could not add Claude Code marketplace ${_name} (${_source})"
   done
-  # shellcheck disable=SC2086
-  for _plugin in $(jq -rs '[.[].enabledPlugins // {} | to_entries[] | select(.value == true) | .key] | unique[]' $_settings); do
+  for _plugin in $_plugins; do
     run_quiet claude plugin install "$_plugin" ||
       print_warning "Could not install Claude Code plugin ${_plugin}"
   done

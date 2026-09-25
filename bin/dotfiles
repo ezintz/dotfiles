@@ -90,12 +90,22 @@ main() {
     print_notice "Skipped mirroring dotfiles."
   else
     print_header "Setting up dotfiles"
-    if confirm "Link the dotfiles into ${HOME}? Existing files are moved aside, not deleted."; then
-      mirror_files
-      setup_claude
-      print_success "... done!"
+    ## A dry run of this step prints nothing when everything is already in
+    ## place, so it doubles as the check: only drift is shown and asked about.
+    _plan=$(plan_links)
+    if [ -z "$_plan" ]; then
+      print_success "Links and Claude settings already in place."
     else
-      print_notice "Skipped mirroring dotfiles."
+      printf '%s\n' "$_plan"
+      if [ -n "$DOTFILES_DRY_RUN" ]; then
+        :
+      elif confirm "Apply these changes to ${HOME}? Existing files are moved aside, not deleted."; then
+        mirror_files
+        setup_claude
+        print_success "... done!"
+      else
+        print_notice "Skipped mirroring dotfiles."
+      fi
     fi
     ## gitauthor is the identity the linked gitconfig includes, so it belongs
     ## with the links rather than with the macOS defaults.
@@ -106,8 +116,13 @@ main() {
     print_notice "Skipped macOS settings update."
   elif is_macos; then
     print_header "macOS settings update"
-    if confirm "Apply the macOS defaults in bin/_macos? This overwrites the matching system settings."; then
-      run sh "${DOTFILES_DIRECTORY}/bin/_macos"
+    ## The check pass writes nothing and needs no sudo; it lists what differs.
+    if MACOS_CHECK=1 sh "${DOTFILES_DIRECTORY}/bin/_macos"; then
+      print_success "macOS settings already in place."
+    elif [ -n "$DOTFILES_DRY_RUN" ]; then
+      :
+    elif confirm "Apply these macOS settings from bin/_macos?"; then
+      sh "${DOTFILES_DIRECTORY}/bin/_macos"
       print_success "... done!"
     else
       print_notice "Skipped macOS settings update."
@@ -141,6 +156,13 @@ sync_own_submodule() {
   fi
   run git -C "$_sub" pull --ff-only -q ||
     print_warning "Could not fast-forward $1; it has local commits or changes"
+}
+
+# Called in $(…) only, so the dry run stays in that subshell.
+plan_links() {
+  DOTFILES_DRY_RUN=1
+  mirror_files
+  setup_claude
 }
 
 sync_repositories() {

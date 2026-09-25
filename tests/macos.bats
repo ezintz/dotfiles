@@ -214,3 +214,26 @@ assert_applied() {
   [ -n "$current" ] || skip "no handler registered for public.plain-text"
   assert_skipped set_default_app "$current" public.plain-text
 }
+
+# MACOS_CHECK is the pass bin/dotfiles runs to decide whether to ask at all, so
+# it has to count exactly what a real run would change — and write none of it.
+@test "the check pass counts a differing value without writing it" {
+  defaults write "$DOMAIN" size -int 40
+  MACOS_CHECK=1 assert_applied set_default "$DOMAIN" size -int 36
+  [ "$(defaults read "$DOMAIN" size)" = 40 ]
+}
+
+@test "the check pass skips a value already in place" {
+  defaults write "$DOMAIN" size -int 36
+  MACOS_CHECK=1 assert_skipped set_default "$DOMAIN" size -int 36
+}
+
+# A merged write cannot be predicted from its arguments, so the check pass
+# performs it on an exported copy. Both directions: a dict-add that adds
+# nothing must stay quiet, or every run would prompt.
+@test "the check pass predicts a merged write without touching the domain" {
+  defaults write "$DOMAIN" panes -dict General -bool true
+  MACOS_CHECK=1 assert_skipped set_default_merged "$DOMAIN" panes -dict-add General -bool true
+  MACOS_CHECK=1 assert_applied set_default_merged "$DOMAIN" panes -dict-add Sharing -bool true
+  ! defaults read "$DOMAIN" panes | grep -q Sharing
+}

@@ -20,6 +20,13 @@ macos_changed() {
   printf '  %s\n' "$*"
 }
 
+## MACOS_CHECK=1 turns bin/_macos into a report: every helper still reads and
+## compares, and names what it would change through macos_changed, but every
+## write goes through macos_write and is skipped. bin/dotfiles runs that pass
+## first and only asks to apply (and so only asks for sudo) when it found
+## something.
+macos_write() { [ -n "${MACOS_CHECK:-}" ] || "$@"; }
+
 ## What, if anything, now needs a logout — empty means nothing does.
 MACOS_LOGOUT_FOR=
 
@@ -78,7 +85,7 @@ _set_default() {
   _sd_have=$(defaults $_sd_scope read "$_sd_domain" "$_sd_key" 2>/dev/null) || _sd_have=
   [ "$_sd_have" = "$_sd_want" ] && return 1
 
-  defaults $_sd_scope write "$_sd_domain" "$_sd_key" "$_sd_type" "$_sd_value" || return 1
+  macos_write defaults $_sd_scope write "$_sd_domain" "$_sd_key" "$_sd_type" "$_sd_value" || return 1
   macos_changed "$_sd_domain $_sd_key = $_sd_value"
 }
 
@@ -88,7 +95,10 @@ _set_default() {
 ## For -array, -dict and -dict-add, which merge with what is already stored
 ## and so have nothing to compare against beforehand. The write happens either
 ## way — it lands the same bytes when the value already matches — and the
-## value read before and after decides whether this counted as a change.
+## value read before and after decides whether this counted as a change. Under
+## MACOS_CHECK the write lands on an exported copy of the domain instead, which
+## merges the same way. The sudo variant is skipped there when sudo would have
+## to ask: the check exists so that a machine in shape is never asked.
 set_default_merged() { _set_default_merged '' "$@"; }
 sudo_set_default_merged() { _set_default_merged sudo "$@"; }
 
@@ -97,9 +107,18 @@ _set_default_merged() {
   _sdm_run=$1 _sdm_domain=$2 _sdm_key=$3
   shift 3
 
+  _sdm_target=$_sdm_domain
+  if [ -n "${MACOS_CHECK:-}" ]; then
+    [ -z "$_sdm_run" ] || sudo -n true 2>/dev/null || return 1
+    _sdm_run="${_sdm_run:+sudo -n}"
+    _sdm_target="$(mktemp -d)/check.plist"
+    $_sdm_run defaults export "$_sdm_domain" "$_sdm_target" 2>/dev/null
+  fi
+
   _sdm_before=$($_sdm_run defaults read "$_sdm_domain" "$_sdm_key" 2>/dev/null) || _sdm_before=
-  $_sdm_run defaults write "$_sdm_domain" "$_sdm_key" "$@" || return 1
-  _sdm_after=$($_sdm_run defaults read "$_sdm_domain" "$_sdm_key" 2>/dev/null) || _sdm_after=
+  $_sdm_run defaults write "$_sdm_target" "$_sdm_key" "$@" || return 1
+  _sdm_after=$($_sdm_run defaults read "$_sdm_target" "$_sdm_key" 2>/dev/null) || _sdm_after=
+  [ -z "${MACOS_CHECK:-}" ] || $_sdm_run rm -rf "${_sdm_target%/*}"
 
   [ "$_sdm_before" = "$_sdm_after" ] && return 1
   macos_changed "$_sdm_domain $_sdm_key"
@@ -129,12 +148,17 @@ pmset_is() {
 ## custom` on Apple silicon laptops. That write is deliberately not counted as
 ## a change: it cannot be confirmed, so counting it would mean every run ends
 ## in the Dock and Finder restarts at the bottom of bin/_macos. Nothing reads
-## a power setting that needs restarting anyway.
+## a power setting that needs restarting anyway. The check pass has no write to
+## confirm, so it counts only a setting pmset reports at all.
 set_pmset() {
   pmset_is "$@" && return 1
 
-  sudo pmset "$1" "$2" "$3" || return 1
-  pmset_is "$@" || return 1
+  if [ -n "${MACOS_CHECK:-}" ]; then
+    pmset -g custom 2>/dev/null | awk -v key="$2" '$1 == key { found = 1 } END { exit !found }' || return 1
+  else
+    sudo pmset "$1" "$2" "$3" || return 1
+    pmset_is "$@" || return 1
+  fi
   macos_changed "pmset $1 $2 $3"
 }
 
@@ -147,8 +171,8 @@ set_nohidden() {
   [ -n "$(find "$1" -maxdepth 0 -flags +hidden 2>/dev/null)" ] || return 1
 
   case $1 in
-    /Volumes | /Volumes/*) sudo chflags nohidden "$1" || return 1 ;;
-    *) chflags nohidden "$1" || return 1 ;;
+    /Volumes | /Volumes/*) macos_write sudo chflags nohidden "$1" || return 1 ;;
+    *) macos_write chflags nohidden "$1" || return 1 ;;
   esac
   macos_changed "chflags nohidden $1"
 }
@@ -159,6 +183,6 @@ set_nohidden() {
 set_default_app() {
   [ "$(duti -d "$2" 2>/dev/null)" = "$1" ] && return 1
 
-  duti -s "$1" "$2" all || return 1
+  macos_write duti -s "$1" "$2" all || return 1
   macos_changed "$2 opens in $1"
 }

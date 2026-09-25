@@ -20,8 +20,7 @@ install_brew_packages() {
   print_header "Installing Homebrew packages ..."
   ## --adopt takes over an app that is already in /Applications (installed by
   ## hand or from a DMG) instead of failing the whole bundle on it.
-  brew_bundle "${DOTFILES_DIRECTORY}/Brewfile"
-  run brew cleanup
+  brew_bundle "${DOTFILES_DIRECTORY}/Brewfile" && run brew cleanup
   remove_unwanted_apps
 }
 
@@ -52,10 +51,19 @@ prepare_sign_ins() {
   fi
 }
 
+# brew_bundle <Brewfile>: installs only when `brew bundle check` finds an entry
+# missing or outdated. The check is read-only and takes seconds, where an
+# install walks every entry; it also runs under --dry-run, so that lists what
+# would be installed. Returns 1 when there was nothing to do.
 ## --verbose passes through each install's own output (download progress,
 ## a .pkg's password prompt); without it a long download looks like a hang.
 brew_bundle() {
-  [ -f "$1" ] || return 0
+  [ -f "$1" ] || return 1
+  if _unmet=$(brew bundle check --verbose --file "$1" 2>&1); then
+    print_success "Everything in ${1#"$HOME"/} is installed and up to date."
+    return 1
+  fi
+  printf '%s\n' "$_unmet" | sed -n 's/^→ /  /p'
   run env HOMEBREW_CASK_OPTS="--adopt ${HOMEBREW_CASK_OPTS:-}" \
     brew bundle install --verbose --file "$1" ||
     print_warning "brew bundle reported failures for $1"
@@ -68,7 +76,7 @@ install_overlay_packages() {
   if [ -f "${DOTFILES_LOCAL_DIRECTORY}/packages.zsh" ]; then
     print_warning "${DOTFILES_LOCAL_DIRECTORY}/packages.zsh is no longer read; move its packages to ${DOTFILES_LOCAL_DIRECTORY}/Brewfile"
   fi
-  brew_bundle "${DOTFILES_LOCAL_DIRECTORY}/Brewfile"
+  brew_bundle "${DOTFILES_LOCAL_DIRECTORY}/Brewfile" || true
 }
 
 # The minimum for the shell, git and the Claude Code guard on a server:

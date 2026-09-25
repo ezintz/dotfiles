@@ -9,24 +9,30 @@
 ## already configured therefore prints nothing and restarts nothing. Keep new
 ## settings on that path — a bare `defaults write` reapplies on every run,
 ## which counts as a change and drags the Dock and Finder restarts at the
-## bottom of this file along with it.
+## bottom of this file along with it. A write that has no helper goes through
+## macos_write, or the check pass bin/dotfiles runs first (MACOS_CHECK=1)
+## performs it instead of only reporting it.
 
 . "${DOTFILES_DIRECTORY:-$HOME/.dotfiles}/bin/lib/ui.sh"
 . "${DOTFILES_DIRECTORY:-$HOME/.dotfiles}/bin/lib/macos.sh"
 
-## Close any open System Preferences panes, to prevent them from overriding
-## settings we’re about to change. `tell application … to quit` launches it
-## first if it is not running, so it is only sent when it is.
-if pgrep -xq "System Settings" || pgrep -xq "System Preferences"; then
-  osascript -e 'tell application "System Settings" to quit' 2>/dev/null ||
-    osascript -e 'tell application "System Preferences" to quit' 2>/dev/null
+## MACOS_CHECK=1 (see macos_write in bin/lib/macos.sh) lists what would change
+## and exits 1 if anything would; none of this setup is needed for that.
+if [ -z "${MACOS_CHECK:-}" ]; then
+  ## Close any open System Preferences panes, to prevent them from overriding
+  ## settings we’re about to change. `tell application … to quit` launches it
+  ## first if it is not running, so it is only sent when it is.
+  if pgrep -xq "System Settings" || pgrep -xq "System Preferences"; then
+    osascript -e 'tell application "System Settings" to quit' 2>/dev/null ||
+      osascript -e 'tell application "System Preferences" to quit' 2>/dev/null
+  fi
+
+  ## Ask for the administrator password upfront
+  sudo -v
+
+  ## Keep-alive: update existing `sudo` time stamp until `.macos` has finished
+  while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 fi
-
-## Ask for the administrator password upfront
-sudo -v
-
-## Keep-alive: update existing `sudo` time stamp until `.macos` has finished
-while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
 ##
 ## Touch ID for sudo
@@ -44,9 +50,12 @@ sudo_local=$(
   [ -f "$pam_reattach" ] && printf 'auth       optional       %s ignore_ssh\n' "$pam_reattach"
   printf 'auth       sufficient     pam_tid.so\n'
 )
-if [ "$(cat /etc/pam.d/sudo_local 2>/dev/null)" != "$sudo_local" ]; then
+write_sudo_local() {
   printf '%s\n' "$sudo_local" | sudo tee /etc/pam.d/sudo_local >/dev/null &&
-    sudo chmod 444 /etc/pam.d/sudo_local && sudo chown root:wheel /etc/pam.d/sudo_local &&
+    sudo chmod 444 /etc/pam.d/sudo_local && sudo chown root:wheel /etc/pam.d/sudo_local
+}
+if [ "$(cat /etc/pam.d/sudo_local 2>/dev/null)" != "$sudo_local" ]; then
+  macos_write write_sudo_local &&
     macos_changed "/etc/pam.d/sudo_local (Touch ID for sudo$([ -f "$pam_reattach" ] && printf ', also in tmux'))"
 fi
 
@@ -69,7 +78,7 @@ fi
 case $(nvram SystemAudioVolume 2>/dev/null | cut -f2-) in
   " " | "%20") ;;
   *)
-    sudo nvram SystemAudioVolume=" " && macos_changed "nvram SystemAudioVolume (boot chime off)"
+    macos_write sudo nvram SystemAudioVolume=" " && macos_changed "nvram SystemAudioVolume (boot chime off)"
     ;;
 esac
 
@@ -113,7 +122,7 @@ set_default com.apple.print.PrintingPrefs "Quit When Finished" -bool true
 set_default com.apple.LaunchServices LSQuarantine -bool false
 
 ## Remove duplicates in the “Open With” menu (also see `lscleanup` alias)
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
+macos_write /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
 
 ## Display ASCII control characters using caret notation in standard text views
 ## Try e.g. `cd /tmp; unidecode "\x{0000}" > cc.txt; open -e cc.txt`
@@ -165,9 +174,10 @@ set_pmset -a autorestart 1
 ## Restart automatically if the computer freezes. Matched on "off" rather than
 ## on "on", so that a machine answering anything else — Apple silicon reports
 ## the setting as unsupported — is left alone instead of written every run.
-case $(sudo systemsetup -getrestartfreeze 2>/dev/null) in
+## Reading it takes sudo; the check pass only uses sudo that will not ask.
+case $(sudo ${MACOS_CHECK:+-n} systemsetup -getrestartfreeze 2>/dev/null) in
   *[Oo]ff)
-    sudo systemsetup -setrestartfreeze on > /dev/null &&
+    macos_write sudo systemsetup -setrestartfreeze on > /dev/null &&
       macos_changed "systemsetup restart after freeze: on"
     ;;
 esac
@@ -378,7 +388,7 @@ set_nohidden /Volumes
 
 ## Remove Dropbox’s green checkmark icons in Finder
 file=/Applications/Dropbox.app/Contents/Resources/emblem-dropbox-uptodate.icns
-[ -e "${file}" ] && mv -f "${file}" "${file}.bak"
+[ -e "${file}" ] && macos_write mv -f "${file}" "${file}.bak"
 
 ## Expand the following File Info panes:
 ## “General”, “Open with”, and “Sharing & Permissions”
@@ -448,8 +458,9 @@ set_default com.apple.dock show-recents -bool false
 ## place" to compare against and deleting it throws away however the icons
 ## have been ordered since. It is asked with `ask` and not `confirm` for that
 ## reason — `--yes` answers the routine questions, and wiping the Launchpad
-## layout on every unattended run is not one of them.
-if [ -n "$(find "${HOME}/Library/Application Support/Dock" -maxdepth 1 -name '*-*.db' 2>/dev/null)" ] &&
+## layout on every unattended run is not one of them. Nor is it drift, so the
+## check pass leaves it out: it is offered only when there is something to apply.
+if [ -z "${MACOS_CHECK:-}" ] && [ -n "$(find "${HOME}/Library/Application Support/Dock" -maxdepth 1 -name '*-*.db' 2>/dev/null)" ] &&
   ask "Reset the Launchpad layout?"; then
   find "${HOME}/Library/Application Support/Dock" -maxdepth 1 -name "*-*.db" -delete &&
     macos_changed "Launchpad layout reset"
@@ -464,7 +475,7 @@ if [ -d /Applications/Xcode.app ]; then
     _sim_link="/Applications/${_sim}.app"
     [ -d "$_sim_app" ] || continue
     [ "$(readlink "$_sim_link" 2>/dev/null)" = "$_sim_app" ] && continue
-    sudo ln -sf "$_sim_app" "$_sim_link" && macos_changed "linked ${_sim_link}"
+    macos_write sudo ln -sf "$_sim_app" "$_sim_link" && macos_changed "linked ${_sim_link}"
   done
 fi
 
@@ -665,17 +676,17 @@ set_default_merged com.apple.spotlight orderedItems -array \
 ## indexing state" — which is what it had been doing silently. The supported
 ## per-directory exclusion is the marker file, and deleting the file undoes it.
 if [ -d "$HOME/Workspace" ] && [ ! -e "$HOME/Workspace/.metadata_never_index" ]; then
-  touch "$HOME/Workspace/.metadata_never_index" &&
+  macos_write touch "$HOME/Workspace/.metadata_never_index" &&
     macos_changed "Spotlight excluded from ~/Workspace"
 fi
 
 ## Make sure indexing is enabled for the main volume
 case $(mdutil -s / 2>/dev/null) in
   *"Indexing enabled"*) ;;
-  *) sudo mdutil -i on / > /dev/null && macos_changed "Spotlight indexing enabled on /" ;;
+  *) macos_write sudo mdutil -i on / > /dev/null && macos_changed "Spotlight indexing enabled on /" ;;
 esac
 
-if [ "$MACOS_CHANGES" -ne "$_spotlight_changes" ]; then
+if [ "$MACOS_CHANGES" -ne "$_spotlight_changes" ] && [ -z "${MACOS_CHECK:-}" ]; then
   ## Load new settings before rebuilding the index
   killall mds > /dev/null 2>&1
 
@@ -753,9 +764,6 @@ set_default com.apple.ActivityMonitor SortDirection -int 0
 ##
 ## Address Book, Dashboard, iCal, TextEdit, and Disk Utility
 ##
-
-## Enable the debug menu in Address Book
-set_default com.apple.addressbook ABShowDebugMenu -bool true
 
 ## Enable Dashboard dev mode (allows keeping widgets on the desktop)
 set_default com.apple.dashboard devmode -bool true
@@ -912,7 +920,7 @@ set_default eu.exelban.Stats pause -bool false
 
 ## Only when something above moved, and only when Stats is already running:
 ## killing it otherwise would start an app the user had deliberately quit.
-if [ "$MACOS_CHANGES" -ne "$_stats_changes" ] && pgrep -xq Stats; then
+if [ "$MACOS_CHANGES" -ne "$_stats_changes" ] && [ -z "${MACOS_CHECK:-}" ] && pgrep -xq Stats; then
   killall Stats > /dev/null 2>&1
   open -a Stats
 fi
@@ -924,11 +932,16 @@ fi
 ## Assign visual studio code as default to some file types.
 set_default_app com.microsoft.VSCode public.plain-text
 set_default_app com.microsoft.VSCode public.unix-executable
-set_default_app com.microsoft.VSCode public.data
 
 ##
 ## Kill affected applications
 ##
+
+## The check pass ends here: its exit status is the answer.
+if [ -n "${MACOS_CHECK:-}" ]; then
+  [ "$MACOS_CHANGES" -eq 0 ]
+  exit
+fi
 
 ## Nothing moved, so nothing needs restarting and there is nothing to ask
 ## about. This is the payoff for every check above: a second run leaves the
