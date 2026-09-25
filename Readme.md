@@ -18,15 +18,23 @@ curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/install.sh | s
 <details>
 <summary><b>A new Mac, step by step</b></summary>
 
-1. **Sign in to the App Store.** Xcode, Keynote, Numbers and Pages are installed
-   through it (`mas`); without a sign-in `brew bundle` reports those four as
-   failed and installs everything else.
-2. **Run `install.sh`** as above and answer its questions (`--yes` answers
-   the routine ones). Once the packages are in, it offers to back up the
-   [private overlay](#private-overlay): pick the forge, log in, and pick
-   another machine's overlay to start from — your settings, packages, SSH host
-   files and Git identity then arrive in the same run. It asks for your Git
-   identity if the overlay has none.
+1. **Have your 1Password Secret Key at hand** — from the Emergency Kit, or a
+   phone or other device that is already signed in. Every other sign-in below
+   takes its password from 1Password.
+2. **Run `install.sh`** as above, in a terminal, and answer its questions
+   (`--yes` answers the routine ones). The sign-ins come in the order they
+   depend on each other, and the run waits for each one:
+   1. **1Password** is installed before everything else and opened — sign in.
+   2. **The App Store** is opened if an App Store app (Xcode, Keynote, Numbers,
+      Pages) is missing — sign in with the Apple ID from 1Password. Skipping
+      is fine: those four then fail and the next `dotfiles` run installs them.
+   3. Everything else in the Brewfile is installed.
+   4. **GitHub** (or your forge): the installer offers to restore the
+      [private overlay](#private-overlay) and runs `gh auth login` — log in
+      with the password and 2FA from 1Password, then pick another machine's
+      overlay to start from. Your settings, packages, SSH host files and Git
+      identity arrive in the same run; it asks for the Git identity if the
+      overlay has none.
 3. **Afterwards, by hand** — none of this belongs in a repository:
    - SSH keys into `~/.ssh` (host files come with the overlay, see
      [SSH](#ssh));
@@ -144,7 +152,8 @@ There is no uninstall. Every link points into `~/.dotfiles`, so
   and customized to my needs. **Read it before running it on your Mac.** It is
   opinionated and some of it is invasive: it turns off the "are you sure you
   want to open this application?" quarantine dialog, disables the boot chime
-  (`nvram`), renames an icon inside `Dropbox.app`, resets the Launchpad
+  (`nvram`), enables Touch ID for `sudo` — also inside tmux, via `pam-reattach` —
+  by writing `/etc/pam.d/sudo_local`, renames an icon inside `Dropbox.app`, resets the Launchpad
   database, and asks to quit running apps (Mail, Safari, browsers, editors) so
   their settings apply. The Safari settings only take effect if the terminal
   has Full Disk Access. `dotfiles --no-configuration` skips it entirely.
