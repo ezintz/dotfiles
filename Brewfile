@@ -58,7 +58,6 @@ brew "telnet"
 # macOS helpers
 brew "cliclick"
 brew "duti"
-brew "mas"
 brew "pam-reattach"  # Touch ID for sudo inside tmux (bin/_macos)
 
 # Tests (claude/plugin/tests/guards.bats)
@@ -93,12 +92,6 @@ cask "krisp"
 cask "slack"
 cask "stats"
 cask "font-jetbrains-mono-nerd-font"
-
-# App Store (needs a signed-in App Store; `mas` installs them by id)
-mas "Xcode", id: 497799835
-mas "Keynote", id: 409183694
-mas "Numbers", id: 409203825
-mas "Pages", id: 409201541
 
 # uv tools
 uv "codegraphcontext"

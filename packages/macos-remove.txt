@@ -1,0 +1,7 @@
+# Apps bin/dotfiles removes from /Applications on macOS, one name per line
+# without ".app". For apps that come with macOS or an Apple ID and that no
+# Brewfile can uninstall; a Homebrew app is dropped from the Brewfile instead.
+# Only the app bundle goes: GarageBand's sound library in
+# /Library/Application Support/GarageBand and /Library/Audio/Apple Loops stays.
+GarageBand
+iMovie

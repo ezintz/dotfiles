@@ -22,28 +22,33 @@ install_brew_packages() {
   ## hand or from a DMG) instead of failing the whole bundle on it.
   brew_bundle "${DOTFILES_DIRECTORY}/Brewfile"
   run brew cleanup
+  remove_unwanted_apps
 }
 
-# On a new Mac the sign-ins depend on each other: the App Store (for the `mas`
-# apps) and the GitHub login that restores the overlay both need passwords
-# kept in 1Password, which is itself only installed by the Brewfile. So when
-# the Brewfile has 1Password and it is not installed yet, it goes first and the
-# run waits for its sign-in; then, if an App Store app is missing, it waits for
-# the App Store sign-in. A machine that already has them is never stopped.
+# App Store apps are owned by root, hence sudo.
+remove_unwanted_apps() {
+  _apps=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${DOTFILES_DIRECTORY}/packages/macos-remove.txt" |
+    while read -r _app; do
+      [ -d "/Applications/${_app}.app" ] && printf '%s\n' "$_app"
+    done)
+  [ -n "$_apps" ] || return 0
+  confirm "Remove $(printf '%s' "$_apps" | tr '\n' ',' | sed 's/,/, /g')" || return 0
+  printf '%s\n' "$_apps" | while read -r _app; do
+    run sudo rm -rf "/Applications/${_app}.app" || print_warning "Could not remove ${_app}"
+  done
+}
+
+# On a new Mac the GitHub login that restores the overlay needs a password kept
+# in 1Password, which is itself only installed by the Brewfile. So when the
+# Brewfile has 1Password and it is not installed yet, it goes first and the run
+# waits for its sign-in. A machine that already has it is never stopped.
 prepare_sign_ins() {
   if grep -q '^cask "1password"' "$1" && [ ! -d /Applications/1Password.app ]; then
     print_header "Installing 1Password first ..."
     run env HOMEBREW_CASK_OPTS="--adopt ${HOMEBREW_CASK_OPTS:-}" brew install --cask 1password 1password-cli ||
       print_warning "Could not install 1Password"
     [ -z "${DOTFILES_DRY_RUN:-}" ] && open -a 1Password 2>/dev/null
-    pause "Sign in to 1Password now: the App Store and the GitHub login later in this run need passwords from it. (On a new Mac you need your Secret Key, from the Emergency Kit or another signed-in device.)"
-  fi
-  _missing=$(sed -n 's/^mas "\([^"]*\)".*/\1/p' "$1" | while read -r _app; do
-    [ -d "/Applications/${_app}.app" ] || printf '%s, ' "$_app"
-  done)
-  if [ -n "$_missing" ]; then
-    [ -z "${DOTFILES_DRY_RUN:-}" ] && open -a "App Store" 2>/dev/null
-    pause "Sign in to the App Store (Store → Sign In) so ${_missing%, } can install. Skipping is fine: the next dotfiles run installs them."
+    pause "Sign in to 1Password now: the GitHub login later in this run needs a password from it. (On a new Mac you need your Secret Key, from the Emergency Kit or another signed-in device.)"
   fi
 }
 

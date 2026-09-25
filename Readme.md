@@ -25,11 +25,8 @@ curl -fsSL https://raw.githubusercontent.com/ezintz/dotfiles/main/install.sh | s
    (`--yes` answers the routine ones). The sign-ins come in the order they
    depend on each other, and the run waits for each one:
    1. **1Password** is installed before everything else and opened — sign in.
-   2. **The App Store** is opened if an App Store app (Xcode, Keynote, Numbers,
-      Pages) is missing — sign in with the Apple ID from 1Password. Skipping
-      is fine: those four then fail and the next `dotfiles` run installs them.
-   3. Everything else in the Brewfile is installed.
-   4. **GitHub** (or your forge): the installer offers to restore the
+   2. Everything else in the Brewfile is installed.
+   3. **GitHub** (or your forge): the installer offers to restore the
       [private overlay](#private-overlay) and runs `gh auth login` — log in
       with the password and 2FA from 1Password, then pick another machine's
       overlay to start from. Your settings, packages, SSH host files and Git
@@ -289,8 +286,11 @@ the shared one: the Kubernetes and infrastructure CLIs the Claude Code guard
 covers (kubectl, helm, argocd, opentofu, ansible) plus k9s, `gh`/`glab`/`tea`,
 `jq`, `uv`, `bats-core` for
 the test suite, cmux and iTerm2, Claude and Codex, Brave, Firefox Developer
-Edition, Chrome and Edge, AltTab and AppCleaner, and Xcode, Keynote, Numbers
-and Pages from the App Store.
+Edition, Chrome and Edge, AltTab and AppCleaner.
+
+Apps that come with macOS or an Apple ID, which no Brewfile can uninstall, are
+listed in [`packages/macos-remove.txt`](packages/macos-remove.txt) (GarageBand
+and iMovie). Each run removes any that are present, after asking once.
 
 On Linux only the basics in [`packages/linux.txt`](packages/linux.txt) are
 installed (bash, curl, git, jq, tmux, zsh), with apt, dnf, apk or pacman.
