@@ -46,7 +46,8 @@ sudo_local=$(
 )
 if [ "$(cat /etc/pam.d/sudo_local 2>/dev/null)" != "$sudo_local" ]; then
   printf '%s\n' "$sudo_local" | sudo tee /etc/pam.d/sudo_local >/dev/null &&
-    sudo chmod 444 /etc/pam.d/sudo_local && sudo chown root:wheel /etc/pam.d/sudo_local
+    sudo chmod 444 /etc/pam.d/sudo_local && sudo chown root:wheel /etc/pam.d/sudo_local &&
+    macos_changed "/etc/pam.d/sudo_local (Touch ID for sudo$([ -f "$pam_reattach" ] && printf ', also in tmux'))"
 fi
 
 ##
