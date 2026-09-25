@@ -47,7 +47,7 @@ brew "golangci-lint"
 brew "node"
 brew "node@24"
 brew "nx"
-brew "oven-sh/bun/bun"
+brew "oven-sh/bun/bun", trusted: true  # third-party tap; Homebrew 7 refuses it untrusted
 brew "uv"
 
 # Network and system
