@@ -84,3 +84,9 @@ shell-integration-features = no-cursor
 # there -- so the key did nothing at all. Send a key tmux knows instead
 # (user-keys in tmux/tmux.conf), where it clears the pane and its history.
 keybind = super+k=csi:99~
+
+# Shift+drag is Ghostty's own selection, the iTerm2 kind: it bypasses tmux and
+# Claude Code, which take plain drags for themselves, and covers what is on
+# screen. The default `true` copies to the selection clipboard, which macOS
+# does not have, so the text never reached Cmd+V; `clipboard` copies there too.
+copy-on-select = clipboard
