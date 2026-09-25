@@ -49,6 +49,16 @@ read_input() {
   return 0
 }
 
+# pause <message>: wait for Enter while the user does something by hand (a
+# sign-in). Not a question, so --yes does not skip it; with no terminal, or
+# under --dry-run, there is nobody to wait for and it returns at once.
+pause() {
+  print_notice "$1"
+  [ -z "${DOTFILES_DRY_RUN:-}" ] || return 0
+  printf '%s  Press Enter to continue.%s ' "$_c_cyan" "$_c_reset"
+  { read -r _reply < /dev/tty; } 2>/dev/null || printf '\n'
+}
+
 # Like ask, but --yes (DOTFILES_YES=1) answers it.
 confirm() {
   if [ -n "${DOTFILES_YES:-}" ]; then

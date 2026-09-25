@@ -16,11 +16,35 @@ load_homebrew() {
 install_brew_packages() {
   load_homebrew || abort "Homebrew is not installed. Run install.sh, which installs it, or see https://brew.sh."
 
+  prepare_sign_ins "${DOTFILES_DIRECTORY}/Brewfile"
   print_header "Installing Homebrew packages ..."
   ## --adopt takes over an app that is already in /Applications (installed by
   ## hand or from a DMG) instead of failing the whole bundle on it.
   brew_bundle "${DOTFILES_DIRECTORY}/Brewfile"
   run brew cleanup
+}
+
+# On a new Mac the sign-ins depend on each other: the App Store (for the `mas`
+# apps) and the GitHub login that restores the overlay both need passwords
+# kept in 1Password, which is itself only installed by the Brewfile. So when
+# the Brewfile has 1Password and it is not installed yet, it goes first and the
+# run waits for its sign-in; then, if an App Store app is missing, it waits for
+# the App Store sign-in. A machine that already has them is never stopped.
+prepare_sign_ins() {
+  if grep -q '^cask "1password"' "$1" && [ ! -d /Applications/1Password.app ]; then
+    print_header "Installing 1Password first ..."
+    run env HOMEBREW_CASK_OPTS="--adopt ${HOMEBREW_CASK_OPTS:-}" brew install --cask 1password 1password-cli ||
+      print_warning "Could not install 1Password"
+    [ -z "${DOTFILES_DRY_RUN:-}" ] && open -a 1Password 2>/dev/null
+    pause "Sign in to 1Password now: the App Store and the GitHub login later in this run need passwords from it. (On a new Mac you need your Secret Key, from the Emergency Kit or another signed-in device.)"
+  fi
+  _missing=$(sed -n 's/^mas "\([^"]*\)".*/\1/p' "$1" | while read -r _app; do
+    [ -d "/Applications/${_app}.app" ] || printf '%s, ' "$_app"
+  done)
+  if [ -n "$_missing" ]; then
+    [ -z "${DOTFILES_DRY_RUN:-}" ] && open -a "App Store" 2>/dev/null
+    pause "Sign in to the App Store (Store → Sign In) so ${_missing%, } can install. Skipping is fine: the next dotfiles run installs them."
+  fi
 }
 
 ## --verbose passes through each install's own output (download progress,
