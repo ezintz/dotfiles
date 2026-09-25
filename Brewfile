@@ -93,6 +93,6 @@ cask "slack"
 cask "stats"
 cask "font-jetbrains-mono-nerd-font"
 
-# uv tools
-uv "codegraphcontext"
+# uv tools are in packages/uv-tools.txt: a Brewfile `uv` entry always runs on
+# the newest Homebrew Python, and cannot be pinned to one that has wheels.
 

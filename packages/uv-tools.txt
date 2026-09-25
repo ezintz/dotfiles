@@ -1,0 +1,8 @@
+# Installed by bin/dotfiles with `uv tool install`, one tool per line followed
+# by any extra arguments for it. Not in the Brewfile: brew bundle always runs uv
+# on the newest Homebrew Python, where a dependency without a wheel for it is
+# compiled from source — and that fails outright whenever the Command Line
+# Tools ship an SDK newer than their own linker.
+#
+# watchdog 6.0.0 has no wheel for 3.14.
+codegraphcontext --python 3.13

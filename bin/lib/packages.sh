@@ -21,7 +21,21 @@ install_brew_packages() {
   ## --adopt takes over an app that is already in /Applications (installed by
   ## hand or from a DMG) instead of failing the whole bundle on it.
   brew_bundle "${DOTFILES_DIRECTORY}/Brewfile" && run brew cleanup
+  install_uv_tools
   remove_unwanted_apps
+}
+
+# Only tools `uv tool list` does not show yet: upgrading is `uv tool upgrade
+# --all`, not something to do behind every run.
+# shellcheck disable=SC2086 # $_args must split into one argument per word
+install_uv_tools() {
+  has uv || return 0
+  _have=$(uv tool list 2>/dev/null | sed -n 's/^\([^ -][^ ]*\) v.*/\1/p')
+  sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${DOTFILES_DIRECTORY}/packages/uv-tools.txt" |
+  while read -r _tool _args; do
+    printf '%s\n' "$_have" | grep -qx "$_tool" && continue
+    run uv tool install $_args "$_tool" || print_warning "Could not install uv tool ${_tool}"
+  done
 }
 
 # App Store apps are owned by root, hence sudo.
