@@ -3,7 +3,6 @@
 
 - `>` will not overwrite: `unsetopt CLOBBER` is set, use `>|` to truncate
   on purpose.
-- `cp`, `mv`, `rm` are aliased to `-i`, bypass alias: `command mv -f old new`.
 - **Unquoted `$var` does not word-split** (zsh's default, not a setting here), so
   a multi-word value stays one argument and a loop meant to fan out collapses
   silently rather than erroring. Use `${=var}` or an array to split on purpose.
