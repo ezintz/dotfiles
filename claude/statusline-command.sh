@@ -69,6 +69,9 @@ effort_label() {
 }
 
 # ── Git info with caching (5s TTL, keyed by session_id) ──────────────────────
+# The cache also records the directory it was read in: a session's directory
+# moves (a cd, EnterWorktree, Claude Code resetting the shell), and a cache hit
+# from the old one showed the new directory's name next to the old branch.
 
 ref_dir="${current_dir:-.}"
 CACHE_FILE="/tmp/statusline-git-${session_id}"
@@ -76,6 +79,7 @@ CACHE_TTL=5
 
 cache_is_stale() {
   [ ! -f "$CACHE_FILE" ] && return 0
+  [ "$(cut -d'|' -f13- "$CACHE_FILE")" = "$ref_dir" ] || return 0
   mtime=$(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)
   [ $(( $(date +%s) - mtime )) -gt $CACHE_TTL ]
 }
@@ -117,17 +121,17 @@ if cache_is_stale; then
     untracked=$(git -C "$ref_dir" ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')
     stashed=$(git -C "$ref_dir" stash list 2>/dev/null | wc -l | tr -d ' ')
 
-    printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n" \
+    printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n" \
       "$branch" "$commit" "$action" \
       "$ahead" "$behind" \
       "$staged" "$deleted" "$modified" "$renamed" "$unmerged" "$untracked" "$stashed" \
-      > "$CACHE_FILE"
+      "$ref_dir" >| "$CACHE_FILE"
   else
-    printf "||||0|0|0|0|0|0|0|0\n" > "$CACHE_FILE"
+    printf "||||0|0|0|0|0|0|0|0|%s\n" "$ref_dir" >| "$CACHE_FILE"
   fi
 fi
 
-# Read cache — IFS='|' read needs exactly 12 fields
+# Read cache — 12 fields, then the directory they were read in
 git_branch=""; git_commit=""; git_action=""
 git_ahead=0; git_behind=0
 git_staged=0; git_deleted=0; git_modified=0; git_renamed=0

@@ -36,6 +36,12 @@ to provenance (parentheses or a `Refs:` trailer), and name things by what they a
 
 - **Three dots, not two, against a base branch**: `git diff main...HEAD` uses
   the merge-base, as `gh pr diff` and `glab mr diff` do.
+- **A session works in one checkout; `cd` does not move it.** To work in a
+  worktree, call `EnterWorktree` with `path` (or start with `claude --worktree`).
+  After a `cd` Claude Code puts the shell back where the session started, and the
+  changes pane, statusline and write access stay on that checkout, so they show
+  whatever another session changes there. To look into another checkout, use
+  `git -C <dir>` or a subshell, `(cd <dir> && …)`.
 - **`.claude/worktrees/` is a second checkout of the repo**, so a scan that
   doesn't skip it double-counts every file and reports each rule twice as if
   duplicated. `rg` skips it; `find`, `ls`, `du` and `grep -r` do not. Prefer
