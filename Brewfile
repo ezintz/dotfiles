@@ -44,6 +44,7 @@ brew "opentofu"
 
 # Languages and build tools
 brew "golangci-lint"
+brew "mise"  # per-project tool versions; activated by the prezto runcoms
 brew "node"
 brew "node@24"
 brew "nx"

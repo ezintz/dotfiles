@@ -85,10 +85,12 @@ The run order in `bin/dotfiles` is: `migrate_overlay` → sync (this repo, then 
 
 `prezto/` is a git submodule pointing to a custom fork (`github.com/ezintz/prezto`). Runtime configs live in `prezto/runcoms/`:
 - `zpreztorc` — which Prezto modules are loaded (the main file to edit for shell behavior)
-- `zprofile` — PATH, environment variables, tool integrations (OrbStack, krew, kubeconfig)
+- `zprofile` — PATH, environment variables, tool integrations (OrbStack, krew, kubeconfig, mise's shims ahead of direnv, which mise installs)
 - `zshrc` — minimal: sources `tmux/cmux.zsh` from this repo (a no-op outside cmux), then Prezto init
 
 The overlay's `zprofile` and then its `secrets.env` are sourced at the end of `zprofile` (likewise `zshrc`/`zpreztorc` for theirs) — machine-specific env vars go in the overlay, keys in `secrets.env`, never in this repo.
+
+`~/.zprofile` and `~/.zshrc` are links into `prezto/runcoms/`, so an installer that appends to "your shell profile" (Docker Desktop, gravity's `scripts/setup/`) writes into the prezto fork, where it shows up as an uncommitted change. Move such lines to the overlay, or make them tracked and generic as mise's are. gravity's `bootstrap.sh` re-appends its two mise lines unless it finds `mise activate zsh` in `~/.zshrc` and `activate zsh --shims` in `~/.zprofile`, which the tracked lines contain on purpose.
 
 ### Modular SSH Config
 
