@@ -1,8 +1,6 @@
 
 # Current shell
 
-- `>` will not overwrite: `unsetopt CLOBBER` is set, use `>|` to truncate
-  on purpose.
 - **Unquoted `$var` does not word-split** (zsh's default, not a setting here), so
   a multi-word value stays one argument and a loop meant to fan out collapses
   silently rather than erroring. Use `${=var}` or an array to split on purpose.
