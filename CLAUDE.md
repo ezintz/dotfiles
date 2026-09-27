@@ -85,8 +85,8 @@ The run order in `bin/dotfiles` is: `migrate_overlay` → sync (this repo, then 
 
 `prezto/` is a git submodule pointing to a custom fork (`github.com/ezintz/prezto`). Runtime configs live in `prezto/runcoms/`:
 - `zpreztorc` — which Prezto modules are loaded (the main file to edit for shell behavior)
-- `zprofile` — PATH, environment variables, tool integrations (OrbStack, krew, kubeconfig, mise's shims ahead of direnv, which mise installs)
-- `zshrc` — minimal: sources `tmux/cmux.zsh` from this repo (a no-op outside cmux), then Prezto init
+- `zprofile` — PATH, environment variables, tool integrations (OrbStack, krew, kubeconfig, mise's shims)
+- `zshrc` — sources `tmux/cmux.zsh` from this repo (a no-op outside cmux), then Prezto init, then the bash-like options for an agent's shell (`CLOBBER`, `SH_WORD_SPLIT`), full mise activation and the direnv hook, which comes after mise because mise installs direnv here
 
 The overlay's `zprofile` and then its `secrets.env` are sourced at the end of `zprofile` (likewise `zshrc`/`zpreztorc` for theirs) — machine-specific env vars go in the overlay, keys in `secrets.env`, never in this repo.
 
