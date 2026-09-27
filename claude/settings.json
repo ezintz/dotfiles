@@ -53,6 +53,30 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.dotfiles/claude/tool-duration.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.dotfiles/claude/tool-duration.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
@@ -72,5 +96,6 @@
   "env": {
     "CLAUDE_CODE_NATIVE_CURSOR": "1",
     "CLAUDE_CODE_TMUX_TRUECOLOR": "1"
-  }
+  },
+  "showMessageTimestamps": true
 }
