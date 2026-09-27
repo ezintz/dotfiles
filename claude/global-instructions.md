@@ -1,11 +1,4 @@
-
-# Current shell
-
-- **Unquoted `$var` does not word-split** (zsh's default, not a setting here), so
-  a multi-word value stays one argument and a loop meant to fan out collapses
-  silently rather than erroring. Use `${=var}` or an array to split on purpose.
-
-## Knowledge / Memory
+# Knowledge / Memory
 
 **A comment carries what the code cannot** — never a restated name, signature or control flow.
 Delete one that does, including a pre-existing one.
