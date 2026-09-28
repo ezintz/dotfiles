@@ -14,7 +14,7 @@
     "diffAddedDimmed": "#005F00",
     "diffRemovedDimmed": "#5F0000",
     "diffAddedWord": "#005F00",
-    "diffRemovedWord": "#5F0000",
+    "diffRemovedWord": "#A70000",
 
     "text": "#DCDFE4",
     "inverseText": "#21252B",

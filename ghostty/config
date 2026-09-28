@@ -15,7 +15,7 @@
 font-family = "JetBrainsMono Nerd Font"
 font-family = Menlo
 font-family = "Apple Symbols"
-font-size = 13
+font-size = 12
 
 # Transparency. cmux applies background-opacity to its tab bar but not to the
 # terminal panes unless a custom-shader is set -- any shader, hence this no-op
@@ -37,9 +37,12 @@ custom-shader = ~/.config/ghostty/passthrough.glsl
 #
 # Two slots deliberately differ from that import, in the iTerm2 copies too:
 #   8  was #767676, a neutral grey that is not a OneDark colour at all. It is
-#      the dim-text slot, so #5C6370 (OneDark's own comment grey) is correct --
-#      and keeping it dark matters because TUIs paint slot 8 as a *background*
-#      for panels, where a light grey leaves their foreground text unreadable.
+#      the dim-text slot, and OneDark's own comment grey #5C6370 was used
+#      first, but Claude Code highlights comments in slot 8 on its #008700
+#      added-line fill, where #5C6370 could not be read. #7E8696 keeps its
+#      blue-grey hue a step lighter, picked by eye against both backgrounds.
+#      It costs panels: TUIs also paint slot 8 as a *background*, and #ABB2BF
+#      text on it drops from 2.8:1 to 1.75:1.
 #   15 was #ABB2BF, identical to slot 7, so bright white was not brighter than
 #      white and emphasis flattened everywhere. #DCDFE4 restores the contrast.
 background = #21252B
@@ -57,7 +60,7 @@ palette = 4=#61AFEF
 palette = 5=#C678DD
 palette = 6=#56B6C2
 palette = 7=#ABB2BF
-palette = 8=#5C6370
+palette = 8=#7E8696
 palette = 9=#E06C75
 palette = 10=#98C379
 palette = 11=#E5C07B

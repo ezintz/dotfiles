@@ -470,7 +470,10 @@
 
   "app" : {
     // Otherwise a workspace with a new notification moves toward the top.
-    "reorderOnNotification" : false
+    "reorderOnNotification" : false,
+    // Scales tab titles and sidebar with the terminals; there is no tab-only
+    // font size, so ghostty's font-size is set one step lower to compensate.
+    "globalFontMagnification" : 110
   },
 
   "terminal" : {
@@ -484,7 +487,8 @@
     // The border that flashes around a pane when it takes focus.
     "paneFlash" : false,
     // Also colours the ring around panes with unread notifications.
-    "paneFlashColor" : "#C678DD"
+    "paneFlashColor" : "#C678DD",
+    "showInMenuBar" : false
   },
 
   "shortcuts" : {
