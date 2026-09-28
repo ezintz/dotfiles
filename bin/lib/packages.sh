@@ -20,7 +20,7 @@ install_brew_packages() {
   print_header "Installing Homebrew packages ..."
   ## --adopt takes over an app that is already in /Applications (installed by
   ## hand or from a DMG) instead of failing the whole bundle on it.
-  brew_bundle "${DOTFILES_DIRECTORY}/Brewfile" && run brew cleanup
+  brew_bundle "${DOTFILES_DIRECTORY}/Brewfile"
   install_uv_tools
   remove_unwanted_apps
 }
@@ -69,6 +69,9 @@ prepare_sign_ins() {
 # missing or outdated. The check is read-only and takes seconds, where an
 # install walks every entry; it also runs under --dry-run, so that lists what
 # would be installed. Returns 1 when there was nothing to do.
+# After an install the whole download cache goes (--prune=all), including the
+# bottles of versions still installed (-s): plain `brew cleanup` keeps 120 days
+# of them, gigabytes on a Mac with large casks, and nothing reinstalls from it.
 ## --verbose passes through each install's own output (download progress,
 ## a .pkg's password prompt); without it a long download looks like a hang.
 brew_bundle() {
@@ -81,6 +84,7 @@ brew_bundle() {
   run env HOMEBREW_CASK_OPTS="--adopt ${HOMEBREW_CASK_OPTS:-}" \
     brew bundle install --verbose --file "$1" ||
     print_warning "brew bundle reported failures for $1"
+  run brew cleanup --prune=all -s
 }
 
 # The overlay's own Brewfile runs separately, after setup_overlay: on a new
