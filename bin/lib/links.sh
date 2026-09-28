@@ -204,3 +204,24 @@ migrate_ssh_hosts() {
     run rm -f "${HOME}/.ssh/config.d"
   fi
 }
+
+# A running tmux server read its config once, at start, so a pulled change to
+# it would otherwise wait for every session to end (in practice a reboot).
+# Re-sourcing keeps every session and pane; tmux.conf is written to survive it
+# (the autosave loop has a guard). The fingerprint of what was last loaded is
+# kept in the server itself, so a run with nothing new does not reload. A
+# server that predates this has no fingerprint and is reloaded once. Removing a
+# line from the config does not unset what the server already has; that still
+# needs a new server.
+reload_tmux() {
+  has tmux && tmux has-session 2>/dev/null || return 0
+  _sum=$(cat "${HOME}/.tmux.conf" "${DOTFILES_LOCAL_DIRECTORY}/tmux.conf" \
+    "${HOME}/.tmux/plugins/tmux-resurrect/resurrect.tmux" 2>/dev/null | cksum)
+  [ "$(tmux show-options -gqv @dotfiles-config)" = "$_sum" ] && return 0
+  print_notice "Reloading the tmux config in the running server ..."
+  if run tmux source-file "${HOME}/.tmux.conf"; then
+    run tmux set-option -g @dotfiles-config "$_sum"
+  else
+    print_warning "tmux reported errors in its config; run: tmux source-file ~/.tmux.conf"
+  fi
+}

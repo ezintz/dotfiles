@@ -107,6 +107,8 @@ main() {
         print_notice "Skipped mirroring dotfiles."
       fi
     fi
+    ## After the links, so ~/.tmux.conf is the file just linked.
+    reload_tmux
     ## gitauthor is the identity the linked gitconfig includes, so it belongs
     ## with the links rather than with the macOS defaults.
     setup_git
