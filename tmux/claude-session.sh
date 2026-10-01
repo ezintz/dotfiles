@@ -47,6 +47,17 @@ case "${1:-}" in
     ## would type `claude --resume <someone else's id>` into whatever runs
     ## there. Whole-line match: a substring test would read 0:0.1 inside 0:0.10.
     live="$(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null)"
+    ## Claude is started by the pane's own shell at its first prompt (the
+    ## precmd hook in prezto/runcoms/zshrc), not typed in with send-keys. At
+    ## this point every restored shell is still starting up, and a typed line
+    ## raced that: an ssh-add passphrase prompt flushes pending input, so
+    ## every pane that asked for one lost it. A shell started later is never
+    ## a restored one, so nothing can land in a Claude that is already running.
+    ## Files are keyed by server pid as well as pane id, since pane ids restart
+    ## at %0 with every server, including a sandbox one on another socket.
+    pending="${HOME}/.local/share/tmux/resurrect/claude-resume"
+    server="$(tmux display-message -p '#{pid}')" || exit 0
+    rm -rf "$pending" && mkdir -p "$pending"
     while read -r pane id; do
       printf '%s\n' "$live" | grep -qxF "$pane" || continue
       ## Record it before Claude does. Claude reports its id at SessionStart,
@@ -55,7 +66,8 @@ case "${1:-}" in
       ## too, because the line is only kept while the pane is absent from the
       ## live list. tmux.conf saves on a 300s timer, so the window is real.
       tmux set-option -p -t "=${pane}" @claude-session "$id"
-      tmux send-keys -t "=${pane}" "claude --resume '${id}'" Enter
+      pane_id="$(tmux display-message -p -t "=${pane}" '#{pane_id}')" || continue
+      printf '%s\n' "$id" >| "${pending}/${server}-${pane_id#%}"
     done < "$file"
     ;;
 esac
